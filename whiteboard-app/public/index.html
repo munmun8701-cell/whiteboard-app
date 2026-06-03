@@ -5,26 +5,20 @@
     <title>グループワーク ボード</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 10px; background-color: #f4f4f9; text-align: center; }
-        
         #login-screen { margin-top: 100px; }
         .input-group { margin-bottom: 15px; }
         .input-group input { padding: 10px; font-size: 18px; border-radius: 5px; border: 1px solid #ccc; width: 250px; }
         #joinBtn { padding: 10px 20px; font-size: 18px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; }
         
         #whiteboard-screen { display: none; }
-        .toolbar { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
-        button, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .toolbar { display: flex; gap: 8px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
+        button, select { padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 15px; font-weight: bold; }
         
         .primary-btn { background-color: #007bff; color: white; border: none; }
-        .danger-btn { background-color: #dc3545; color: white; border: none; } /* 消すボタンの赤色 */
+        .danger-btn { background-color: #dc3545; color: white; border: none; }
+        .page-btn { background-color: #ffc107; color: #333; border: none; }
         
-        .canvas-container { 
-            margin: 0 auto !important; 
-            border: 2px solid #ccc; 
-            background-color: white; 
-            border-radius: 8px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-        }
+        .canvas-container { margin: 0 auto !important; border: 2px solid #ccc; background-color: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
@@ -42,16 +36,26 @@
 
     <div id="whiteboard-screen">
         <div class="toolbar">
-            <span id="display-info" style="line-height: 35px; font-weight: bold; margin-right: 10px;"></span>
+            <button id="prevPageBtn" class="page-btn">◀ 前</button>
+            <span id="pageDisplay" style="font-weight:bold; font-size:16px;">1ページ目</span>
+            <button id="nextPageBtn" class="page-btn">次 ▶</button>
             
+            <span style="border-left: 2px solid #ccc; height: 30px; margin: 0 5px;"></span>
+
             <select id="tool">
-                <option value="draw">ペンでかく</option>
-                <option value="text">もじをいれる</option>
-                <option value="select">えらぶ・うごかす</option> </select>
+                <option value="draw">✎ ペンでかく</option>
+                <option value="text">A もじをいれる</option>
+                <option value="select">👆 えらぶ・うごかす</option>
+            </select>
             <input type="color" id="colorPicker" value="#000000">
             
-            <button id="deleteObjBtn" class="danger-btn">えらんだものを けす</button> <button id="clearBtn" class="primary-btn">ぜんぶけす</button>
-            <button id="exportBtn" style="background-color: #17a2b8; color: white; border: none;">データをエクスポート(先生用)</button>
+            <button id="deleteObjBtn" class="danger-btn">えらんで けす</button>
+            
+            <button id="uploadBtn" class="primary-btn">📷 しゃしん</button>
+            <input type="file" id="imageUpload" accept="image/*" style="display:none;">
+            
+            <span style="border-left: 2px solid #ccc; height: 30px; margin: 0 5px;"></span>
+            <button id="clearBtn" class="danger-btn">ぜんぶけす</button>
         </div>
 
         <canvas id="canvas" width="1000" height="600"></canvas>

@@ -8,43 +8,39 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-// 🌟 ここを追加！：部屋ごとのホワイトボードのデータを記憶する「ノート」を用意
+// 部屋(ページ)ごとのデータを記憶するノート
 const roomHistory = {};
 
 io.on('connection', (socket) => {
-    console.log('ユーザーが接続しました:', socket.id);
-
     socket.on('join-room', (roomName) => {
+        // もし別のページにいた場合は、古いページから退出する
+        if (socket.roomName) {
+            socket.leave(socket.roomName);
+        }
+        
         socket.join(roomName);
         socket.roomName = roomName;
-        console.log(`ユーザー ${socket.id} が部屋 ${roomName} に参加しました`);
-
-        // 🌟 ここを追加！：もし過去に描かれたデータが残っていたら、新しく入った人にだけ送る
+        
+        // そのページの過去データがあれば送信、なければ真っ白にする
         if (roomHistory[roomName]) {
             socket.emit('canvas-data', roomHistory[roomName]);
+        } else {
+            socket.emit('clear-canvas');
         }
     });
 
     socket.on('canvas-data', (data) => {
         if (socket.roomName) {
-            // 🌟 ここを追加！：最新の状態をサーバーの「ノート」に上書き記録する
             roomHistory[socket.roomName] = data;
-            
-            // 他のメンバーに変更を送信
             socket.to(socket.roomName).emit('canvas-data', data);
         }
     });
 
     socket.on('clear-canvas', () => {
         if (socket.roomName) {
-            // 🌟 ここを追加！：「ぜんぶけす」が押されたら、サーバーの「ノート」も白紙に戻す
             roomHistory[socket.roomName] = null;
             socket.to(socket.roomName).emit('clear-canvas');
         }
-    });
-
-    socket.on('disconnect', () => {
-        console.log('ユーザーが切断しました:', socket.id);
     });
 });
 
