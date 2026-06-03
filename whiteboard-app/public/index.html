@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>グループワーク ボード</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 10px; background-color: #f4f4f9; text-align: center; }
+        
+        #login-screen { margin-top: 100px; }
+        .input-group { margin-bottom: 15px; }
+        .input-group input { padding: 10px; font-size: 18px; border-radius: 5px; border: 1px solid #ccc; width: 250px; }
+        #joinBtn { padding: 10px 20px; font-size: 18px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        
+        #whiteboard-screen { display: none; }
+        .toolbar { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
+        button, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        
+        .primary-btn { background-color: #007bff; color: white; border: none; }
+        .danger-btn { background-color: #dc3545; color: white; border: none; } /* 消すボタンの赤色 */
+        
+        .canvas-container { 
+            margin: 0 auto !important; 
+            border: 2px solid #ccc; 
+            background-color: white; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen">
+        <h2>グループの ボードへ ようこそ！</h2>
+        <div class="input-group">
+            <input type="text" id="username" placeholder="あなたの なまえ" required>
+        </div>
+        <div class="input-group">
+            <input type="text" id="roomName" placeholder="グループの あいことば" required>
+        </div>
+        <button id="joinBtn">ボードに入る</button>
+    </div>
+
+    <div id="whiteboard-screen">
+        <div class="toolbar">
+            <span id="display-info" style="line-height: 35px; font-weight: bold; margin-right: 10px;"></span>
+            
+            <select id="tool">
+                <option value="draw">ペンでかく</option>
+                <option value="text">もじをいれる</option>
+                <option value="select">えらぶ・うごかす</option> </select>
+            <input type="color" id="colorPicker" value="#000000">
+            
+            <button id="deleteObjBtn" class="danger-btn">えらんだものを けす</button> <button id="clearBtn" class="primary-btn">ぜんぶけす</button>
+            <button id="exportBtn" style="background-color: #17a2b8; color: white; border: none;">データをエクスポート(先生用)</button>
+        </div>
+
+        <canvas id="canvas" width="1000" height="600"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+
+</body>
+</html>
