@@ -17,8 +17,10 @@
         .primary-btn { background-color: #007bff; color: white; border: none; }
         .danger-btn { background-color: #dc3545; color: white; border: none; }
         .page-btn { background-color: #ffc107; color: #333; border: none; }
+        .export-btn { background-color: #17a2b8; color: white; border: none; }
         
         .canvas-container { margin: 0 auto !important; border: 2px solid #ccc; background-color: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .divider { border-left: 2px solid #ccc; height: 30px; margin: 0 5px; }
     </style>
 </head>
 <body>
@@ -40,27 +42,33 @@
             <span id="pageDisplay" style="font-weight:bold; font-size:16px;">1ページ目</span>
             <button id="nextPageBtn" class="page-btn">次 ▶</button>
             
-            <span style="border-left: 2px solid #ccc; height: 30px; margin: 0 5px;"></span>
+            <span class="divider"></span>
 
             <select id="tool">
                 <option value="draw">✎ ペンでかく</option>
                 <option value="text">A もじをいれる</option>
+                <option value="sticky">📝 ふせんをはる</option>
                 <option value="select">👆 えらぶ・うごかす</option>
             </select>
             <input type="color" id="colorPicker" value="#000000">
             
             <button id="deleteObjBtn" class="danger-btn">えらんで けす</button>
             
+            <span class="divider"></span>
+            
             <button id="uploadBtn" class="primary-btn">📷 しゃしん</button>
+            <button id="exportCsvBtn" class="export-btn">📊 エクセル</button>
+            <button id="exportPdfBtn" class="export-btn">📄 PDF保存</button>
             <input type="file" id="imageUpload" accept="image/*" style="display:none;">
             
-            <span style="border-left: 2px solid #ccc; height: 30px; margin: 0 5px;"></span>
+            <span class="divider"></span>
             <button id="clearBtn" class="danger-btn">ぜんぶけす</button>
         </div>
 
         <canvas id="canvas" width="1000" height="600"></canvas>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
