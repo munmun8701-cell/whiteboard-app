@@ -10,6 +10,7 @@ let remotePointers = {};
 let currentPage = 1;
 let maxPage = 1;
 
+// UI要素の取得
 const loginScreen = document.getElementById('login-screen');
 const whiteboardScreen = document.getElementById('whiteboard-screen');
 const usernameInput = document.getElementById('username');
@@ -38,6 +39,7 @@ const canvasWrapper = document.getElementById('canvas-wrapper');
 const pageListContainer = document.getElementById('page-list');
 const addPageBtn = document.getElementById('addPageBtn');
 
+// タイマー関連
 let timerInterval = null;
 let currentSeconds = 300;
 const timerWidget = document.getElementById('timer-widget');
@@ -46,7 +48,9 @@ const timerPlusBtn = document.getElementById('timerPlusBtn');
 const timerMinusBtn = document.getElementById('timerMinusBtn');
 const timerStartBtn = document.getElementById('timerStartBtn');
 const timerStopBtn = document.getElementById('timerStopBtn');
+const timerControls = document.getElementById('timer-controls'); // 追加
 
+// 入室処理
 joinBtn.addEventListener('click', () => {
     myName = usernameInput.value.trim();
     myRoom = roomNameInput.value.trim();
@@ -62,19 +66,25 @@ joinBtn.addEventListener('click', () => {
     whiteboardScreen.style.display = 'block';
     timerWidget.style.display = 'block';
     
+    // 先生・生徒で表示を切り替え
     if (isTeacher) {
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
         submitBtn.style.display = 'none';
+        timerControls.style.display = 'block'; // 先生にはタイマー操作を見せる
         updateTimerDisplay();
         socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
     } else {
         submitBtn.style.display = 'inline-block';
+        timerControls.style.display = 'none'; // 生徒にはタイマー操作を見せない
+        // 生徒用は余分なボタンを隠す
+        document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'none');
     }
 
     renderPageButtons();
     initCanvas();
 });
 
+// ページ切り替えUI
 function renderPageButtons() {
     pageListContainer.innerHTML = '';
     for (let i = 1; i <= maxPage; i++) {
@@ -101,9 +111,11 @@ addPageBtn.addEventListener('click', () => {
     switchPage(maxPage);
 });
 
+// キャンバス初期化
 function initCanvas() {
     canvas = new fabric.Canvas('canvas', { isDrawingMode: false });
 
+    // ツール切り替え
     toolSelect.addEventListener('change', (e) => {
         if (isLocked && !isTeacher) {
             canvas.isDrawingMode = false;
@@ -116,6 +128,7 @@ function initCanvas() {
         canvas.freeDrawingBrush.color = e.target.value;
     });
 
+    // 権限設定（いたずら防止）
     function setPermissions(obj) {
         if (isTeacher) {
             obj.set({ selectable: true, evented: true });
@@ -125,10 +138,14 @@ function initCanvas() {
         }
     }
 
+    // スクロール位置の取得（付箋などを画面の中心に出すため）
     function getScrollOffset() {
-        return { x: canvasWrapper.scrollLeft + 50, y: canvasWrapper.scrollTop + 50 };
+        // キャンバスラッパーが存在するかチェック
+        const wrapper = canvasWrapper || document.body; 
+        return { x: wrapper.scrollLeft + 100, y: wrapper.scrollTop + 100 };
     }
 
+    // 学習枠（めあて・まとめ）の追加
     function createBoardFrame(type) {
         const isGaku = (type === '学');
         const color = '#1e88e5'; 
@@ -158,12 +175,13 @@ function initCanvas() {
         addMaBtn.addEventListener('click', () => createBoardFrame('ま'));
     }
 
+    // ふせんの追加
     addStickyBtn.addEventListener('click', () => {
         const selectedColor = stickyColorSelect.value;
         const offset = getScrollOffset();
 
         const stickyText = new fabric.IText('ここに入力', {
-            left: offset.x + Math.random() * 100, top: offset.y + Math.random() * 100,
+            left: offset.x + Math.random() * 50, top: offset.y + Math.random() * 50,
             fontSize: 22, padding: 15, backgroundColor: selectedColor, fill: '#333', author: myName, timestamp: new Date().toLocaleString(),
             shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 })
         });
@@ -178,8 +196,13 @@ function initCanvas() {
         emitCanvasData();
     });
 
+    // PDFエクスポート
     if (isTeacher) {
         exportPdfBtn.addEventListener('click', () => {
+            if (typeof window.jspdf === 'undefined') {
+                alert('PDF作成プログラムが読み込まれていません。画面を更新してください。');
+                return;
+            }
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
             const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
@@ -190,6 +213,7 @@ function initCanvas() {
         });
     }
 
+    // ポインター機能
     canvas.on('mouse:move', function(options) {
         if (toolSelect.value === 'pointer') {
             const pointer = canvas.getPointer(options.e);
@@ -220,6 +244,7 @@ function initCanvas() {
         }, 2000);
     });
 
+    // テキスト入力
     canvas.on('mouse:down', function(options) {
         if (toolSelect.value === 'pointer') return; 
 
@@ -236,14 +261,17 @@ function initCanvas() {
         }
     });
 
+    // 線を描いたとき
     canvas.on('path:created', function(options) {
         options.path.set({ author: myName, timestamp: new Date().toLocaleString() });
         setPermissions(options.path);
         emitCanvasData();
     });
 
+    // 動かしたとき
     canvas.on('object:modified', () => emitCanvasData());
 
+    // 削除処理
     deleteObjBtn.addEventListener('click', () => {
         const activeObjects = canvas.getActiveObjects();
         if (activeObjects.length === 0) return;
@@ -262,6 +290,7 @@ function initCanvas() {
         }
     });
 
+    // 画像貼り付け
     window.addEventListener('paste', (e) => {
         if (isLocked && !isTeacher) return;
         const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -291,6 +320,7 @@ function initCanvas() {
         }
     });
 
+    // 通信（データ送信）
     function emitCanvasData() {
         if (isReceiving) return;
         const objectsToSave = canvas.getObjects().filter(obj => obj.author);
@@ -298,6 +328,7 @@ function initCanvas() {
         socket.emit('canvas-data', { page: currentPage, canvas: json });
     }
 
+    // 通信（データ受信）
     socket.on('canvas-data', (data) => {
         const targetPage = data.page || 1;
         
@@ -310,6 +341,14 @@ function initCanvas() {
 
         isReceiving = true;
         const canvasRaw = data.canvas ? data.canvas : data;
+        
+        // データが空の場合の処理
+        if (!canvasRaw || (Object.keys(canvasRaw).length === 0)) {
+             canvas.clear();
+             isReceiving = false;
+             return;
+        }
+
         canvas.loadFromJSON(canvasRaw, function() {
             canvas.renderAll();
             isReceiving = false;
@@ -320,10 +359,20 @@ function initCanvas() {
         });
     });
 
+    // ぜんぶけす
+    clearBtn.addEventListener('click', () => {
+        if(confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
+            canvas.clear();
+            socket.emit('clear-canvas'); // サーバーにクリアを通知
+            emitCanvasData(); // 空になった状態を送信して上書き
+        }
+    });
+    
     socket.on('clear-canvas-local', () => {
         canvas.clear();
     });
 
+    // 注目！（ロック機能）
     if (isTeacher) {
         lockBoardBtn.addEventListener('click', () => {
             const willLock = !isLocked;
@@ -348,6 +397,7 @@ function initCanvas() {
         }
     });
 
+    // 提出機能
     submitBtn.addEventListener('click', () => {
         const dataURL = canvas.toDataURL({ format: 'png', quality: 0.8 });
         socket.emit('submit-work', { author: `${myName} (P.${currentPage})`, image: dataURL, time: new Date().toLocaleTimeString() });
@@ -381,19 +431,7 @@ function initCanvas() {
     viewGalleryBtn.addEventListener('click', () => galleryModal.style.display = 'block');
     closeGalleryBtn.addEventListener('click', () => galleryModal.style.display = 'none');
 
-    clearBtn.addEventListener('click', () => {
-        if(confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
-            canvas.clear();
-            socket.emit('clear-canvas');
-        }
-    });
-    
-    socket.on('clear-canvas', (data) => {
-        if (data.page === currentPage) {
-            canvas.clear();
-        }
-    });
-
+    // タイマー機能
     function updateTimerDisplay() {
         const m = Math.floor(currentSeconds / 60).toString().padStart(2, '0');
         const s = (currentSeconds % 60).toString().padStart(2, '0');
@@ -440,7 +478,8 @@ function initCanvas() {
                 }
             } else {
                 stopTimer();
-                if (isTeacher) alert('時間です！');
+                // 先生モードの時だけアラートを出す（生徒が一斉にアラートで止まらないようにするため）
+                if (isTeacher) alert('時間です！'); 
             }
         }, 1000);
     }
