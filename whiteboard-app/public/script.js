@@ -9,15 +9,12 @@ let remotePointers = {};
 let currentPage = 1;
 let maxPage = 1;
 
-// 🌟最強の防御：ボタンが無い時にエラーを出さないための魔法の関数
+function getEl(id) { return document.getElementById(id); }
 function safeAddListener(id, eventType, callback) {
-    const el = document.getElementById(id);
-    if (el) {
-        el.addEventListener(eventType, callback);
-    }
+    const el = getEl(id);
+    if (el) el.addEventListener(eventType, callback);
 }
 
-// 画面が読み込まれたら、存在するボタンにだけ機能をセットする
 window.onload = () => {
     safeAddListener('joinBtn', 'click', joinRoom);
     safeAddListener('addPageBtn', 'click', addPage);
@@ -25,41 +22,27 @@ window.onload = () => {
     safeAddListener('addStickyBtn', 'click', addSticky);
     safeAddListener('submitBtn', 'click', submitWork);
     
-    // 先生用ボタン
     safeAddListener('addGakuBtn', 'click', () => createBoardFrame('学'));
     safeAddListener('addMaBtn', 'click', () => createBoardFrame('ま'));
     safeAddListener('lockBoardBtn', 'click', toggleLock);
-    safeAddListener('viewGalleryBtn', 'click', () => {
-        const modal = document.getElementById('gallery-modal');
-        if (modal) modal.style.display = 'block';
-    });
-    safeAddListener('closeGalleryBtn', 'click', () => {
-        const modal = document.getElementById('gallery-modal');
-        if (modal) modal.style.display = 'none';
-    });
+    safeAddListener('viewGalleryBtn', 'click', () => { const m = getEl('gallery-modal'); if(m) m.style.display = 'block'; });
+    safeAddListener('closeGalleryBtn', 'click', () => { const m = getEl('gallery-modal'); if(m) m.style.display = 'none'; });
     safeAddListener('exportPdfBtn', 'click', exportPDF);
     safeAddListener('clearBtn', 'click', clearAll);
 };
 
 function joinRoom() {
-    const userEl = document.getElementById('username');
-    const roomEl = document.getElementById('roomName');
-    const teacherEl = document.getElementById('isTeacherMode');
-    
-    myName = userEl ? userEl.value.trim() : 'ななし';
-    myRoom = roomEl ? roomEl.value.trim() : 'room1';
-    isTeacher = teacherEl ? teacherEl.checked : false;
+    myName = getEl('username') ? getEl('username').value.trim() : 'ななし';
+    myRoom = getEl('roomName') ? getEl('roomName').value.trim() : 'room1';
+    isTeacher = getEl('isTeacherMode') ? getEl('isTeacherMode').checked : false;
 
     if (!myName || !myRoom) return alert('なまえ と あいことば をいれてね！');
 
     socket.emit('join-room', myRoom);
+    if(getEl('login-screen')) getEl('login-screen').style.display = 'none';
+    if(getEl('whiteboard-screen')) getEl('whiteboard-screen').style.display = 'block';
     
-    const loginScreen = document.getElementById('login-screen');
-    const wbScreen = document.getElementById('whiteboard-screen');
-    if (loginScreen) loginScreen.style.display = 'none';
-    if (wbScreen) wbScreen.style.display = 'block';
-    
-    const submitBtn = document.getElementById('submitBtn');
+    const submitBtn = getEl('submitBtn');
     if (isTeacher) {
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
         if (submitBtn) submitBtn.style.display = 'none';
@@ -73,8 +56,8 @@ function joinRoom() {
 }
 
 function renderPageButtons() {
-    const container = document.getElementById('page-list');
-    if (!container) return; // ページ機能がHTMLになければ安全に無視する
+    const container = getEl('page-list');
+    if (!container) return;
     container.innerHTML = '';
     for (let i = 1; i <= maxPage; i++) {
         const btn = document.createElement('button');
@@ -88,7 +71,7 @@ function renderPageButtons() {
 function switchPage(pageNumber) {
     currentPage = pageNumber;
     renderPageButtons();
-    if (canvas) canvas.clear();
+    if(canvas) canvas.clear();
     socket.emit('switch-page', pageNumber);
 }
 
@@ -98,10 +81,15 @@ function addPage() {
 }
 
 function initCanvas() {
+    // 起動時は選択モード（えらぶ・うごかす）
     canvas = new fabric.Canvas('canvas', { isDrawingMode: false });
+    if(getEl('tool')) getEl('tool').value = 'select';
 
     safeAddListener('tool', 'change', (e) => {
-        if (isLocked && !isTeacher) return (canvas.isDrawingMode = false);
+        if (isLocked && !isTeacher) {
+            canvas.isDrawingMode = false;
+            return;
+        }
         canvas.isDrawingMode = (e.target.value === 'draw');
     });
 
@@ -119,14 +107,15 @@ function initCanvas() {
     }
 
     function getScrollOffset() {
-        const wrapper = document.getElementById('canvas-wrapper'); 
+        const wrapper = getEl('canvas-wrapper'); 
         if (!wrapper) return { x: 100, y: 100 };
         return { x: wrapper.scrollLeft + 100, y: wrapper.scrollTop + 100 };
     }
 
+    // 🌟 修正：まとめ枠を赤色に変更 🌟
     window.createBoardFrame = function(type) {
         const isGaku = (type === '学');
-        const color = '#1e88e5'; 
+        const color = isGaku ? '#1e88e5' : '#dc3545'; // 学＝青、ま＝赤
         const offset = getScrollOffset();
 
         const circle = new fabric.Circle({ radius: 20, fill: 'white', stroke: color, strokeWidth: 4, originX: 'center', originY: 'center' });
@@ -142,14 +131,15 @@ function initCanvas() {
         setPermissions(innerText);
         canvas.add(innerText);
 
-        const toolEl = document.getElementById('tool');
+        // 枠を作ったら自動で「えらぶ」ツールに戻す（動かせるようにするため）
+        const toolEl = getEl('tool');
         if (toolEl) toolEl.value = 'select';
         canvas.isDrawingMode = false;
         emitCanvasData();
     };
 
     window.addSticky = function() {
-        const colorEl = document.getElementById('stickyColor');
+        const colorEl = getEl('stickyColor');
         const selectedColor = colorEl ? colorEl.value : '#fff9c4';
         const offset = getScrollOffset();
 
@@ -164,14 +154,15 @@ function initCanvas() {
         stickyText.enterEditing();
         stickyText.selectAll();
         
-        const toolEl = document.getElementById('tool');
+        // ふせんを作ったら自動で「えらぶ」ツールに戻す
+        const toolEl = getEl('tool');
         if (toolEl) toolEl.value = 'select';
         canvas.isDrawingMode = false;
         emitCanvasData();
     };
 
     canvas.on('mouse:move', (options) => {
-        const toolEl = document.getElementById('tool');
+        const toolEl = getEl('tool');
         if (toolEl && toolEl.value === 'pointer') {
             const pointer = canvas.getPointer(options.e);
             socket.emit('pointer-move', { author: myName, page: currentPage, x: pointer.x, y: pointer.y });
@@ -196,10 +187,10 @@ function initCanvas() {
     });
 
     canvas.on('mouse:down', (options) => {
-        const toolEl = document.getElementById('tool');
+        const toolEl = getEl('tool');
         if (toolEl && toolEl.value === 'text' && !canvas.isDrawingMode) {
             const pointer = canvas.getPointer(options.e);
-            const colorEl = document.getElementById('colorPicker');
+            const colorEl = getEl('colorPicker');
             const text = new fabric.IText('ここに入力', { left: pointer.x, top: pointer.y, fill: colorEl ? colorEl.value : '#000', fontSize: 24, author: myName, timestamp: new Date().toLocaleString() });
             setPermissions(text);
             canvas.add(text);
@@ -207,7 +198,9 @@ function initCanvas() {
             text.enterEditing();
             text.selectAll();
             emitCanvasData();
+            
             toolEl.value = 'select'; 
+            canvas.isDrawingMode = false;
         }
     });
 
@@ -219,17 +212,38 @@ function initCanvas() {
 
     canvas.on('object:modified', () => emitCanvasData());
 
+    // 🌟 修正：削除時に分かりやすいヒントを出す 🌟
     window.deleteSelected = function() {
         const activeObjects = canvas.getActiveObjects();
-        if (activeObjects.length === 0) return;
-        activeObjects.forEach(obj => { if (isTeacher || obj.author === myName) canvas.remove(obj); });
-        canvas.discardActiveObject();
-        emitCanvasData();
+        if (activeObjects.length === 0) {
+            alert('消したいものを「👆えらぶ・うごかす」ツールでクリックして選んでから、けすボタンを押してね！');
+            return;
+        }
+        
+        let deletedSomething = false;
+        let notYours = false;
+
+        activeObjects.forEach(obj => {
+            if (isTeacher || obj.author === myName) {
+                canvas.remove(obj);
+                deletedSomething = true;
+            } else {
+                notYours = true;
+            }
+        });
+
+        if (deletedSomething) {
+            canvas.discardActiveObject();
+            emitCanvasData();
+        }
+        if (notYours) {
+            alert('ほかの人がかいたものは、けせません！');
+        }
     };
 
     window.addEventListener('keydown', (e) => {
         if ((e.key === 'Delete' || e.key === 'Backspace') && e.target.tagName !== 'INPUT' && !canvas.getActiveObject()?.isEditing) {
-            deleteSelected();
+            window.deleteSelected();
         }
     });
 
@@ -252,7 +266,8 @@ function initCanvas() {
                         setPermissions(image);
                         canvas.add(image);
                         canvas.setActiveObject(image);
-                        const toolEl = document.getElementById('tool');
+                        
+                        const toolEl = getEl('tool');
                         if (toolEl) toolEl.value = 'select';
                         canvas.isDrawingMode = false;
                         emitCanvasData();
@@ -306,7 +321,7 @@ function initCanvas() {
     window.toggleLock = function() {
         isLocked = !isLocked;
         socket.emit('lock-board', isLocked);
-        const btn = document.getElementById('lockBoardBtn');
+        const btn = getEl('lockBoardBtn');
         if (btn) {
             btn.textContent = isLocked ? 'ロック解除' : '注目！';
             btn.style.backgroundColor = isLocked ? '#28a745' : '#dc3545';
@@ -316,14 +331,14 @@ function initCanvas() {
     socket.on('lock-board', (lockedState) => {
         if (!isTeacher) {
             isLocked = lockedState;
-            const overlay = document.getElementById('lock-overlay');
+            const overlay = getEl('lock-overlay');
             if (isLocked) {
                 if (overlay) overlay.style.display = 'flex';
                 canvas.discardActiveObject();
                 canvas.isDrawingMode = false;
             } else {
                 if (overlay) overlay.style.display = 'none';
-                const toolEl = document.getElementById('tool');
+                const toolEl = getEl('tool');
                 if (toolEl && toolEl.value === 'draw') canvas.isDrawingMode = true;
             }
         }
@@ -332,7 +347,7 @@ function initCanvas() {
     window.submitWork = function() {
         const dataURL = canvas.toDataURL({ format: 'png', quality: 0.8 });
         socket.emit('submit-work', { author: `${myName} (P.${currentPage})`, image: dataURL, time: new Date().toLocaleTimeString() });
-        const btn = document.getElementById('submitBtn');
+        const btn = getEl('submitBtn');
         if (btn) {
             const originalText = btn.textContent;
             btn.textContent = '✅ 提出しました！';
@@ -343,12 +358,12 @@ function initCanvas() {
 
     socket.on('receive-submission', (data) => {
         if (!isTeacher) return;
-        const grid = document.getElementById('gallery-grid');
+        const grid = getEl('gallery-grid');
         if (!grid) return;
-        let existingImg = document.getElementById('sub-img-' + data.author);
+        let existingImg = getEl('sub-img-' + data.author);
         if (existingImg) {
             existingImg.src = data.image;
-            document.getElementById('sub-time-' + data.author).textContent = '更新: ' + data.time;
+            getEl('sub-time-' + data.author).textContent = '更新: ' + data.time;
         } else {
             const div = document.createElement('div');
             div.className = 'gallery-item';
