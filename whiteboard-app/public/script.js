@@ -10,32 +10,9 @@ let currentPage = 1;
 let maxPage = 1;
 
 function getEl(id) { return document.getElementById(id); }
-function safeAddListener(id, eventType, callback) {
-    const el = getEl(id);
-    if (el) el.addEventListener(eventType, callback);
-}
 
-window.onload = () => {
-    safeAddListener('joinBtn', 'click', joinRoom);
-    safeAddListener('addPageBtn', 'click', addPage);
-    safeAddListener('deleteObjBtn', 'click', deleteSelected);
-    safeAddListener('addStickyBtn', 'click', addSticky);
-    safeAddListener('submitBtn', 'click', submitWork);
-    
-    safeAddListener('addGakuBtn', 'click', () => createBoardFrame('学'));
-    safeAddListener('addMaBtn', 'click', () => createBoardFrame('ま'));
-    safeAddListener('lockBoardBtn', 'click', toggleLock);
-    safeAddListener('viewGalleryBtn', 'click', () => {
-        const m = getEl('gallery-modal');
-        if (m) m.style.display = 'block';
-    });
-    safeAddListener('closeGalleryBtn', 'click', () => {
-        const m = getEl('gallery-modal');
-        if (m) m.style.display = 'none';
-    });
-    safeAddListener('exportPdfBtn', 'click', exportPDF);
-    safeAddListener('clearBtn', 'click', clearAll);
-};
+// 🌟 修正ポイント：すべての関数の「設計図」を一番外側に用意しました！
+// これでボタンがいつ押されても、絶対に迷子になりません。
 
 function joinRoom() {
     myName = getEl('username') ? getEl('username').value.trim() : 'ななし';
@@ -86,8 +63,157 @@ function addPage() {
     switchPage(maxPage);
 }
 
+function setPermissions(obj) {
+    if (isTeacher) {
+        obj.set({ selectable: true, evented: true });
+    } else {
+        const isMine = (obj.author === myName);
+        obj.set({ selectable: isMine, evented: isMine });
+    }
+}
+
+function getScrollOffset() {
+    const wrapper = getEl('canvas-wrapper'); 
+    if (!wrapper) return { x: 100, y: 100 };
+    return { x: wrapper.scrollLeft + 100, y: wrapper.scrollTop + 100 };
+}
+
+function createBoardFrame(type) {
+    if(!canvas) return;
+    const isGaku = (type === '学');
+    const color = isGaku ? '#1e88e5' : '#dc3545';
+    const offset = getScrollOffset();
+
+    const circle = new fabric.Circle({ radius: 20, fill: 'white', stroke: color, strokeWidth: 4, originX: 'center', originY: 'center' });
+    const text = new fabric.Text(type, { fontSize: 24, fill: color, fontWeight: 'bold', originX: 'center', originY: 'center' });
+    const badge = new fabric.Group([circle, text], { left: -20, top: -20 });
+    const rect = new fabric.Rect({ left: 0, top: 0, width: 450, height: 120, fill: 'transparent', stroke: color, strokeWidth: 4, rx: 8, ry: 8 });
+
+    const frameGroup = new fabric.Group([rect, badge], { left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
+    setPermissions(frameGroup);
+    canvas.add(frameGroup);
+
+    const innerText = new fabric.IText(isGaku ? 'めあてを入力...' : 'まとめを入力...', { left: offset.x + 40, top: offset.y + 30, fontSize: 24, fill: '#333', author: myName });
+    setPermissions(innerText);
+    canvas.add(innerText);
+
+    const toolEl = getEl('tool');
+    if (toolEl) toolEl.value = 'select';
+    canvas.isDrawingMode = false;
+    emitCanvasData();
+}
+
+function addSticky() {
+    if(!canvas) return;
+    const colorEl = getEl('stickyColor');
+    const selectedColor = colorEl ? colorEl.value : '#fff9c4';
+    const offset = getScrollOffset();
+
+    const stickyText = new fabric.IText('ここに入力', {
+        left: offset.x + Math.random() * 50, top: offset.y + Math.random() * 50,
+        fontSize: 22, padding: 15, backgroundColor: selectedColor, fill: '#333', author: myName, timestamp: new Date().toLocaleString(),
+        shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 })
+    });
+    setPermissions(stickyText);
+    canvas.add(stickyText);
+    canvas.setActiveObject(stickyText);
+    stickyText.enterEditing();
+    stickyText.selectAll();
+    
+    const toolEl = getEl('tool');
+    if (toolEl) toolEl.value = 'select';
+    canvas.isDrawingMode = false;
+    emitCanvasData();
+}
+
+function deleteSelected() {
+    if(!canvas) return;
+    const activeObjects = canvas.getActiveObjects();
+    if (activeObjects.length === 0) {
+        alert('消したいものを「👆えらぶ・うごかす」ツールでクリックして選んでから、けすボタンを押してね！');
+        return;
+    }
+    
+    let deletedSomething = false;
+    let notYours = false;
+
+    activeObjects.forEach(obj => {
+        if (isTeacher || obj.author === myName) {
+            canvas.remove(obj);
+            deletedSomething = true;
+        } else {
+            notYours = true;
+        }
+    });
+
+    if (deletedSomething) {
+        canvas.discardActiveObject();
+        emitCanvasData();
+    }
+    if (notYours) {
+        alert('ほかの人がかいたものは、けせません！');
+    }
+}
+
+function clearAll() {
+    if(!canvas) return;
+    if (confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
+        canvas.clear();
+        canvas.backgroundColor = '#ffffff'; 
+        socket.emit('clear-canvas'); 
+        emitCanvasData(); 
+    }
+}
+
+function toggleLock() {
+    isLocked = !isLocked;
+    socket.emit('lock-board', isLocked);
+    const btn = getEl('lockBoardBtn');
+    if (btn) {
+        btn.textContent = isLocked ? 'ロック解除' : '注目！';
+        btn.style.backgroundColor = isLocked ? '#28a745' : '#dc3545';
+    }
+}
+
+function submitWork() {
+    if(!canvas) return;
+    const dataURL = canvas.toDataURL({ format: 'png', quality: 0.8 });
+    socket.emit('submit-work', { author: `${myName} (P.${currentPage})`, image: dataURL, time: new Date().toLocaleTimeString() });
+    const btn = getEl('submitBtn');
+    if (btn) {
+        const originalText = btn.textContent;
+        btn.textContent = '✅ 提出しました！';
+        btn.style.backgroundColor = '#28a745';
+        setTimeout(() => { btn.textContent = originalText; btn.style.backgroundColor = '#ff9800'; }, 2000);
+    }
+}
+
+function exportPDF() {
+    if(!canvas) return;
+    if (typeof window.jspdf === 'undefined') return alert('PDF作成プログラムが読み込まれていません。画面を更新してください。');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
+    
+    // PDF保存時に確実に背景を白にする
+    canvas.backgroundColor = '#ffffff';
+    canvas.renderAll();
+    
+    const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    
+    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
+}
+
+function emitCanvasData() {
+    if (isReceiving || !canvas) return;
+    const objectsToSave = canvas.getObjects().filter(obj => obj.author);
+    const json = { objects: objectsToSave.map(obj => obj.toObject(['author', 'timestamp'])) };
+    socket.emit('canvas-data', { page: currentPage, canvas: json });
+}
+
 function initCanvas() {
-    // 🌟 修正：背景を「透明」から「白色（#ffffff）」に変更しました！これでPDFが綺麗に出ます！
     canvas = new fabric.Canvas('canvas', { 
         isDrawingMode: false,
         backgroundColor: '#ffffff'
@@ -95,7 +221,7 @@ function initCanvas() {
     
     if(getEl('tool')) getEl('tool').value = 'select';
 
-    safeAddListener('tool', 'change', (e) => {
+    getEl('tool')?.addEventListener('change', (e) => {
         if (isLocked && !isTeacher) {
             canvas.isDrawingMode = false;
             return;
@@ -103,70 +229,9 @@ function initCanvas() {
         canvas.isDrawingMode = (e.target.value === 'draw');
     });
 
-    safeAddListener('colorPicker', 'change', (e) => {
+    getEl('colorPicker')?.addEventListener('change', (e) => {
         canvas.freeDrawingBrush.color = e.target.value;
     });
-
-    function setPermissions(obj) {
-        if (isTeacher) {
-            obj.set({ selectable: true, evented: true });
-        } else {
-            const isMine = (obj.author === myName);
-            obj.set({ selectable: isMine, evented: isMine });
-        }
-    }
-
-    function getScrollOffset() {
-        const wrapper = getEl('canvas-wrapper'); 
-        if (!wrapper) return { x: 100, y: 100 };
-        return { x: wrapper.scrollLeft + 100, y: wrapper.scrollTop + 100 };
-    }
-
-    window.createBoardFrame = function(type) {
-        const isGaku = (type === '学');
-        const color = isGaku ? '#1e88e5' : '#dc3545';
-        const offset = getScrollOffset();
-
-        const circle = new fabric.Circle({ radius: 20, fill: 'white', stroke: color, strokeWidth: 4, originX: 'center', originY: 'center' });
-        const text = new fabric.Text(type, { fontSize: 24, fill: color, fontWeight: 'bold', originX: 'center', originY: 'center' });
-        const badge = new fabric.Group([circle, text], { left: -20, top: -20 });
-        const rect = new fabric.Rect({ left: 0, top: 0, width: 450, height: 120, fill: 'transparent', stroke: color, strokeWidth: 4, rx: 8, ry: 8 });
-
-        const frameGroup = new fabric.Group([rect, badge], { left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
-        setPermissions(frameGroup);
-        canvas.add(frameGroup);
-
-        const innerText = new fabric.IText(isGaku ? 'めあてを入力...' : 'まとめを入力...', { left: offset.x + 40, top: offset.y + 30, fontSize: 24, fill: '#333', author: myName });
-        setPermissions(innerText);
-        canvas.add(innerText);
-
-        const toolEl = getEl('tool');
-        if (toolEl) toolEl.value = 'select';
-        canvas.isDrawingMode = false;
-        emitCanvasData();
-    };
-
-    window.addSticky = function() {
-        const colorEl = getEl('stickyColor');
-        const selectedColor = colorEl ? colorEl.value : '#fff9c4';
-        const offset = getScrollOffset();
-
-        const stickyText = new fabric.IText('ここに入力', {
-            left: offset.x + Math.random() * 50, top: offset.y + Math.random() * 50,
-            fontSize: 22, padding: 15, backgroundColor: selectedColor, fill: '#333', author: myName, timestamp: new Date().toLocaleString(),
-            shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 })
-        });
-        setPermissions(stickyText);
-        canvas.add(stickyText);
-        canvas.setActiveObject(stickyText);
-        stickyText.enterEditing();
-        stickyText.selectAll();
-        
-        const toolEl = getEl('tool');
-        if (toolEl) toolEl.value = 'select';
-        canvas.isDrawingMode = false;
-        emitCanvasData();
-    };
 
     canvas.on('mouse:move', (options) => {
         const toolEl = getEl('tool');
@@ -174,23 +239,6 @@ function initCanvas() {
             const pointer = canvas.getPointer(options.e);
             socket.emit('pointer-move', { author: myName, page: currentPage, x: pointer.x, y: pointer.y });
         }
-    });
-
-    socket.on('pointer-move', (data) => {
-        if (data.page !== currentPage) return;
-        if (!remotePointers[data.author]) {
-            const circle = new fabric.Circle({ radius: 8, fill: 'red', originX: 'center', originY: 'center', shadow: new fabric.Shadow({ color: 'red', blur: 10 }) });
-            const nameText = new fabric.Text(data.author, { fontSize: 16, fill: 'red', top: 15, originX: 'center', fontWeight: 'bold' });
-            const pointerGroup = new fabric.Group([circle, nameText], { selectable: false, evented: false });
-            canvas.add(pointerGroup);
-            remotePointers[data.author] = { group: pointerGroup, timeout: null };
-        }
-        const p = remotePointers[data.author];
-        p.group.set({ left: data.x, top: data.y });
-        canvas.renderAll();
-
-        clearTimeout(p.timeout);
-        p.timeout = setTimeout(() => { canvas.remove(p.group); delete remotePointers[data.author]; canvas.renderAll(); }, 2000);
     });
 
     canvas.on('mouse:down', (options) => {
@@ -219,37 +267,9 @@ function initCanvas() {
 
     canvas.on('object:modified', () => emitCanvasData());
 
-    window.deleteSelected = function() {
-        const activeObjects = canvas.getActiveObjects();
-        if (activeObjects.length === 0) {
-            alert('消したいものを「👆えらぶ・うごかす」ツールでクリックして選んでから、けすボタンを押してね！');
-            return;
-        }
-        
-        let deletedSomething = false;
-        let notYours = false;
-
-        activeObjects.forEach(obj => {
-            if (isTeacher || obj.author === myName) {
-                canvas.remove(obj);
-                deletedSomething = true;
-            } else {
-                notYours = true;
-            }
-        });
-
-        if (deletedSomething) {
-            canvas.discardActiveObject();
-            emitCanvasData();
-        }
-        if (notYours) {
-            alert('ほかの人がかいたものは、けせません！');
-        }
-    };
-
     window.addEventListener('keydown', (e) => {
         if ((e.key === 'Delete' || e.key === 'Backspace') && e.target.tagName !== 'INPUT' && !canvas.getActiveObject()?.isEditing) {
-            window.deleteSelected();
+            deleteSelected();
         }
     });
 
@@ -283,32 +303,53 @@ function initCanvas() {
             }
         }
     });
+}
 
-    function emitCanvasData() {
-        if (isReceiving) return;
-        const objectsToSave = canvas.getObjects().filter(obj => obj.author);
-        const json = { objects: objectsToSave.map(obj => obj.toObject(['author', 'timestamp'])) };
-        socket.emit('canvas-data', { page: currentPage, canvas: json });
+// 🌟 修正ポイント：すべての準備が整ってからボタンと設計図を繋げる！
+window.addEventListener('DOMContentLoaded', () => {
+    getEl('joinBtn')?.addEventListener('click', joinRoom);
+    getEl('addPageBtn')?.addEventListener('click', addPage);
+    getEl('deleteObjBtn')?.addEventListener('click', deleteSelected);
+    getEl('addStickyBtn')?.addEventListener('click', addSticky);
+    getEl('submitBtn')?.addEventListener('click', submitWork);
+    
+    getEl('addGakuBtn')?.addEventListener('click', () => createBoardFrame('学'));
+    getEl('addMaBtn')?.addEventListener('click', () => createBoardFrame('ま'));
+    getEl('lockBoardBtn')?.addEventListener('click', toggleLock);
+    getEl('viewGalleryBtn')?.addEventListener('click', () => {
+        const m = getEl('gallery-modal');
+        if (m) m.style.display = 'block';
+    });
+    getEl('closeGalleryBtn')?.addEventListener('click', () => {
+        const m = getEl('gallery-modal');
+        if (m) m.style.display = 'none';
+    });
+    getEl('exportPdfBtn')?.addEventListener('click', exportPDF);
+    getEl('clearBtn')?.addEventListener('click', clearAll);
+});
+
+// --- 通信を受け取る処理 ---
+
+socket.on('canvas-data', (data) => {
+    const targetPage = data.page || 1;
+    if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
+    if (targetPage !== currentPage) return; 
+
+    isReceiving = true;
+    const canvasRaw = data.canvas || data;
+    
+    if (!canvasRaw || Object.keys(canvasRaw).length === 0) {
+         if(canvas) {
+             canvas.clear();
+             canvas.backgroundColor = '#ffffff'; 
+         }
+         isReceiving = false;
+         return;
     }
 
-    socket.on('canvas-data', (data) => {
-        const targetPage = data.page || 1;
-        if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
-        if (targetPage !== currentPage) return; 
-
-        isReceiving = true;
-        const canvasRaw = data.canvas || data;
-        
-        if (!canvasRaw || Object.keys(canvasRaw).length === 0) {
-             canvas.clear();
-             // 背景色を維持するために、クリア後にもう一度色を設定
-             canvas.backgroundColor = '#ffffff'; 
-             isReceiving = false;
-             return;
-        }
-
+    if(canvas) {
         canvas.loadFromJSON(canvasRaw, () => {
-            canvas.backgroundColor = '#ffffff'; // 読み込み時にも背景色を再設定
+            canvas.backgroundColor = '#ffffff'; 
             canvas.renderAll();
             isReceiving = false;
         }, (o, object) => {
@@ -316,91 +357,65 @@ function initCanvas() {
             object.set('timestamp', o.timestamp);
             setPermissions(object);
         });
-    });
+    }
+});
 
-    window.clearAll = function() {
-        if (confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
-            canvas.clear();
-            canvas.backgroundColor = '#ffffff'; // クリア後も白背景を維持
-            socket.emit('clear-canvas'); 
-            emitCanvasData(); 
-        }
-    };
-    
-    socket.on('clear-canvas-local', () => {
+socket.on('pointer-move', (data) => {
+    if(!canvas) return;
+    if (data.page !== currentPage) return;
+    if (!remotePointers[data.author]) {
+        const circle = new fabric.Circle({ radius: 8, fill: 'red', originX: 'center', originY: 'center', shadow: new fabric.Shadow({ color: 'red', blur: 10 }) });
+        const nameText = new fabric.Text(data.author, { fontSize: 16, fill: 'red', top: 15, originX: 'center', fontWeight: 'bold' });
+        const pointerGroup = new fabric.Group([circle, nameText], { selectable: false, evented: false });
+        canvas.add(pointerGroup);
+        remotePointers[data.author] = { group: pointerGroup, timeout: null };
+    }
+    const p = remotePointers[data.author];
+    p.group.set({ left: data.x, top: data.y });
+    canvas.renderAll();
+
+    clearTimeout(p.timeout);
+    p.timeout = setTimeout(() => { canvas.remove(p.group); delete remotePointers[data.author]; canvas.renderAll(); }, 2000);
+});
+
+socket.on('clear-canvas-local', () => { 
+    if(canvas) {
         canvas.clear();
         canvas.backgroundColor = '#ffffff';
         canvas.renderAll();
-    });
+    }
+});
 
-    window.toggleLock = function() {
-        isLocked = !isLocked;
-        socket.emit('lock-board', isLocked);
-        const btn = getEl('lockBoardBtn');
-        if (btn) {
-            btn.textContent = isLocked ? 'ロック解除' : '注目！';
-            btn.style.backgroundColor = isLocked ? '#28a745' : '#dc3545';
-        }
-    };
-
-    socket.on('lock-board', (lockedState) => {
-        if (!isTeacher) {
-            isLocked = lockedState;
-            const overlay = getEl('lock-overlay');
-            if (isLocked) {
-                if (overlay) overlay.style.display = 'flex';
+socket.on('lock-board', (lockedState) => {
+    if (!isTeacher) {
+        isLocked = lockedState;
+        const overlay = getEl('lock-overlay');
+        if (isLocked) {
+            if (overlay) overlay.style.display = 'flex';
+            if(canvas) {
                 canvas.discardActiveObject();
                 canvas.isDrawingMode = false;
-            } else {
-                if (overlay) overlay.style.display = 'none';
-                const toolEl = getEl('tool');
-                if (toolEl && toolEl.value === 'draw') canvas.isDrawingMode = true;
             }
-        }
-    });
-
-    window.submitWork = function() {
-        const dataURL = canvas.toDataURL({ format: 'png', quality: 0.8 });
-        socket.emit('submit-work', { author: `${myName} (P.${currentPage})`, image: dataURL, time: new Date().toLocaleTimeString() });
-        const btn = getEl('submitBtn');
-        if (btn) {
-            const originalText = btn.textContent;
-            btn.textContent = '✅ 提出しました！';
-            btn.style.backgroundColor = '#28a745';
-            setTimeout(() => { btn.textContent = originalText; btn.style.backgroundColor = '#ff9800'; }, 2000);
-        }
-    };
-
-    socket.on('receive-submission', (data) => {
-        if (!isTeacher) return;
-        const grid = getEl('gallery-grid');
-        if (!grid) return;
-        let existingImg = getEl('sub-img-' + data.author);
-        if (existingImg) {
-            existingImg.src = data.image;
-            getEl('sub-time-' + data.author).textContent = '更新: ' + data.time;
         } else {
-            const div = document.createElement('div');
-            div.className = 'gallery-item';
-            div.innerHTML = `<h3 style="margin:0 0 10px 0; color:#333;">👦 ${data.author}</h3><img id="sub-img-${data.author}" src="${data.image}" alt="提出物"><p id="sub-time-${data.author}" style="color:#666; font-size:14px; margin:5px 0 0 0;">提出: ${data.time}</p>`;
-            grid.appendChild(div);
+            if (overlay) overlay.style.display = 'none';
+            const toolEl = getEl('tool');
+            if (toolEl && toolEl.value === 'draw' && canvas) canvas.isDrawingMode = true;
         }
-    });
+    }
+});
 
-    window.exportPDF = function() {
-        if (typeof window.jspdf === 'undefined') return alert('PDF作成プログラムが読み込まれていません。画面を更新してください。');
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
-        
-        // JPEG出力する前に背景が白いことを確実に保証
-        canvas.backgroundColor = '#ffffff';
-        canvas.renderAll();
-        
-        const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-        
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
-    };
-}
+socket.on('receive-submission', (data) => {
+    if (!isTeacher) return;
+    const grid = getEl('gallery-grid');
+    if (!grid) return;
+    let existingImg = getEl('sub-img-' + data.author);
+    if (existingImg) {
+        existingImg.src = data.image;
+        getEl('sub-time-' + data.author).textContent = '更新: ' + data.time;
+    } else {
+        const div = document.createElement('div');
+        div.className = 'gallery-item';
+        div.innerHTML = `<h3 style="margin:0 0 10px 0; color:#333;">👦 ${data.author}</h3><img id="sub-img-${data.author}" src="${data.image}" alt="提出物"><p id="sub-time-${data.author}" style="color:#666; font-size:14px; margin:5px 0 0 0;">提出: ${data.time}</p>`;
+        grid.appendChild(div);
+    }
+});
