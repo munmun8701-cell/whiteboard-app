@@ -15,22 +15,42 @@ io.on('connection', (socket) => {
     socket.on('join-room', (roomName) => {
         socket.join(roomName);
         socket.roomName = roomName;
-        if (roomHistory[roomName]) {
-            socket.emit('canvas-data', roomHistory[roomName]);
+        socket.currentPage = 1;
+        
+        const roomKey = `${roomName}_1`;
+        if (roomHistory[roomKey]) {
+            socket.emit('canvas-data', { page: 1, canvas: roomHistory[roomKey] });
+        }
+    });
+
+    socket.on('switch-page', (pageNumber) => {
+        if (socket.roomName) {
+            socket.currentPage = pageNumber;
+            const roomKey = `${socket.roomName}_${pageNumber}`;
+            if (roomHistory[roomKey]) {
+                socket.emit('canvas-data', { page: pageNumber, canvas: roomHistory[roomKey] });
+            } else {
+                socket.emit('clear-canvas-local');
+            }
         }
     });
 
     socket.on('canvas-data', (data) => {
         if (socket.roomName) {
-            roomHistory[socket.roomName] = data;
-            socket.to(socket.roomName).emit('canvas-data', data);
+            const page = socket.currentPage || 1;
+            const roomKey = `${socket.roomName}_${page}`;
+            const canvasRaw = data.canvas ? data.canvas : data;
+            roomHistory[roomKey] = canvasRaw;
+            socket.to(socket.roomName).emit('canvas-data', { page: page, canvas: canvasRaw });
         }
     });
 
     socket.on('clear-canvas', () => {
         if (socket.roomName) {
-            roomHistory[socket.roomName] = null;
-            socket.to(socket.roomName).emit('clear-canvas');
+            const page = socket.currentPage || 1;
+            const roomKey = `${socket.roomName}_${page}`;
+            roomHistory[roomKey] = null;
+            socket.to(socket.roomName).emit('clear-canvas', { page: page });
         }
     });
 
@@ -42,12 +62,10 @@ io.on('connection', (socket) => {
         if (socket.roomName) socket.to(socket.roomName).emit('receive-submission', data);
     });
 
-    // 🌟 新機能：ポインターの動きを全員に転送
     socket.on('pointer-move', (data) => {
         if (socket.roomName) socket.to(socket.roomName).emit('pointer-move', data);
     });
 
-    // 🌟 新機能：タイマーの時間を全員に転送
     socket.on('sync-timer', (data) => {
         if (socket.roomName) socket.to(socket.roomName).emit('sync-timer', data);
     });
@@ -60,4 +78,4 @@ io.on('connection', (socket) => {
 const PORT = 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`サーバー起動中: ポート${PORT}`);
-});
+});S

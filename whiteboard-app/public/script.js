@@ -5,7 +5,10 @@ let myName = '';
 let myRoom = '';
 let isTeacher = false;
 let isLocked = false;
-let remotePointers = {}; // 🌟 ポインター管理用
+let remotePointers = {};
+
+let currentPage = 1;
+let maxPage = 1;
 
 const loginScreen = document.getElementById('login-screen');
 const whiteboardScreen = document.getElementById('whiteboard-screen');
@@ -32,9 +35,11 @@ const stickyColorSelect = document.getElementById('stickyColor');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
 const canvasWrapper = document.getElementById('canvas-wrapper');
 
-// 🌟 タイマー用の変数と要素
+const pageListContainer = document.getElementById('page-list');
+const addPageBtn = document.getElementById('addPageBtn');
+
 let timerInterval = null;
-let currentSeconds = 300; // 初期値5分（300秒）
+let currentSeconds = 300;
 const timerWidget = document.getElementById('timer-widget');
 const timerDisplay = document.getElementById('timer-display');
 const timerPlusBtn = document.getElementById('timerPlusBtn');
@@ -55,24 +60,49 @@ joinBtn.addEventListener('click', () => {
     socket.emit('join-room', myRoom);
     loginScreen.style.display = 'none';
     whiteboardScreen.style.display = 'block';
-    timerWidget.style.display = 'block'; // 入室したらタイマー表示
+    timerWidget.style.display = 'block';
     
     if (isTeacher) {
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
         submitBtn.style.display = 'none';
-        
-        // 先生が初めに入った時、今の時間を送信して同期させる
         updateTimerDisplay();
         socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
     } else {
         submitBtn.style.display = 'inline-block';
     }
 
+    renderPageButtons();
     initCanvas();
 });
 
+function renderPageButtons() {
+    pageListContainer.innerHTML = '';
+    for (let i = 1; i <= maxPage; i++) {
+        const btn = document.createElement('button');
+        btn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
+        btn.textContent = i;
+        btn.addEventListener('click', () => {
+            if (i === currentPage) return;
+            switchPage(i);
+        });
+        pageListContainer.appendChild(btn);
+    }
+}
+
+function switchPage(pageNumber) {
+    currentPage = pageNumber;
+    renderPageButtons();
+    canvas.clear();
+    socket.emit('switch-page', pageNumber);
+}
+
+addPageBtn.addEventListener('click', () => {
+    maxPage++;
+    switchPage(maxPage);
+});
+
 function initCanvas() {
-    canvas = new fabric.Canvas('canvas', { isDrawingMode: false }); // 初期はポインターモード
+    canvas = new fabric.Canvas('canvas', { isDrawingMode: false });
 
     toolSelect.addEventListener('change', (e) => {
         if (isLocked && !isTeacher) {
@@ -156,36 +186,32 @@ function initCanvas() {
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`ボード記録_${myRoom}.pdf`);
+            pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
         });
     }
 
-    // 🌟 1. ポインター機能：マウスが動いた時の処理
     canvas.on('mouse:move', function(options) {
         if (toolSelect.value === 'pointer') {
             const pointer = canvas.getPointer(options.e);
-            socket.emit('pointer-move', { author: myName, x: pointer.x, y: pointer.y });
+            socket.emit('pointer-move', { author: myName, page: currentPage, x: pointer.x, y: pointer.y });
         }
     });
 
-    // 🌟 他の人のポインターデータを受信した時の処理
     socket.on('pointer-move', (data) => {
+        if (data.page !== currentPage) return;
+
         if (!remotePointers[data.author]) {
-            // 新しい人なら、赤い丸と名前のラベルを作る
             const circle = new fabric.Circle({ radius: 8, fill: 'red', originX: 'center', originY: 'center', shadow: new fabric.Shadow({ color: 'red', blur: 10 }) });
             const nameText = new fabric.Text(data.author, { fontSize: 16, fill: 'red', top: 15, originX: 'center', fontWeight: 'bold' });
-            const pointerGroup = new fabric.Group([circle, nameText], {
-                selectable: false, evented: false // 触れないようにする
-            });
+            const pointerGroup = new fabric.Group([circle, nameText], { selectable: false, evented: false });
             canvas.add(pointerGroup);
             remotePointers[data.author] = { group: pointerGroup, timeout: null };
         }
         
         const p = remotePointers[data.author];
-        p.group.set({ left: data.x, top: data.y }); // 位置を更新
+        p.group.set({ left: data.x, top: data.y });
         canvas.renderAll();
 
-        // 2秒間動かなかったらポインターを消す
         clearTimeout(p.timeout);
         p.timeout = setTimeout(() => {
             canvas.remove(p.group);
@@ -195,7 +221,6 @@ function initCanvas() {
     });
 
     canvas.on('mouse:down', function(options) {
-        // ポインターモードの時は文字入力や線引きを発動させない
         if (toolSelect.value === 'pointer') return; 
 
         if (toolSelect.value === 'text' && !canvas.isDrawingMode) {
@@ -268,15 +293,24 @@ function initCanvas() {
 
     function emitCanvasData() {
         if (isReceiving) return;
-        // 🌟 保存時にポインターの赤丸が残らないように、authorがあるもの（描画データ）だけを送信する
         const objectsToSave = canvas.getObjects().filter(obj => obj.author);
         const json = { objects: objectsToSave.map(obj => obj.toObject(['author', 'timestamp'])) };
-        socket.emit('canvas-data', json);
+        socket.emit('canvas-data', { page: currentPage, canvas: json });
     }
 
     socket.on('canvas-data', (data) => {
+        const targetPage = data.page || 1;
+        
+        if (targetPage > maxPage) {
+            maxPage = targetPage;
+            renderPageButtons();
+        }
+
+        if (targetPage !== currentPage) return; 
+
         isReceiving = true;
-        canvas.loadFromJSON(data, function() {
+        const canvasRaw = data.canvas ? data.canvas : data;
+        canvas.loadFromJSON(canvasRaw, function() {
             canvas.renderAll();
             isReceiving = false;
         }, function(o, object) {
@@ -284,6 +318,10 @@ function initCanvas() {
             object.set('timestamp', o.timestamp);
             setPermissions(object);
         });
+    });
+
+    socket.on('clear-canvas-local', () => {
+        canvas.clear();
     });
 
     if (isTeacher) {
@@ -312,7 +350,7 @@ function initCanvas() {
 
     submitBtn.addEventListener('click', () => {
         const dataURL = canvas.toDataURL({ format: 'png', quality: 0.8 });
-        socket.emit('submit-work', { author: myName, image: dataURL, time: new Date().toLocaleTimeString() });
+        socket.emit('submit-work', { author: `${myName} (P.${currentPage})`, image: dataURL, time: new Date().toLocaleTimeString() });
         const originalText = submitBtn.textContent;
         submitBtn.textContent = '✅ 提出しました！';
         submitBtn.style.backgroundColor = '#28a745';
@@ -344,20 +382,22 @@ function initCanvas() {
     closeGalleryBtn.addEventListener('click', () => galleryModal.style.display = 'none');
 
     clearBtn.addEventListener('click', () => {
-        if(confirm('ほんとうに ぜんぶ けしますか？')) {
+        if(confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
             canvas.clear();
             socket.emit('clear-canvas');
         }
     });
-    socket.on('clear-canvas', () => canvas.clear());
+    
+    socket.on('clear-canvas', (data) => {
+        if (data.page === currentPage) {
+            canvas.clear();
+        }
+    });
 
-    // 🌟 2. タイマー機能の仕組み
     function updateTimerDisplay() {
         const m = Math.floor(currentSeconds / 60).toString().padStart(2, '0');
         const s = (currentSeconds % 60).toString().padStart(2, '0');
         timerDisplay.textContent = `${m}:${s}`;
-        
-        // 残り時間が10秒を切ったら赤くする演出
         if (currentSeconds <= 10 && currentSeconds > 0) {
             timerDisplay.style.color = '#ff4444';
         } else {
@@ -395,7 +435,6 @@ function initCanvas() {
             if (currentSeconds > 0) {
                 currentSeconds--;
                 updateTimerDisplay();
-                // 先生側から1秒ごとに生徒へ正確な時間を送信してズレを防ぐ
                 if (isTeacher) {
                     socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
                 }

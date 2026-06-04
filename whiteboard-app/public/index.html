@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>グループワーク ボード（究極版）</title>
+    <title>グループワーク ボード</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
@@ -28,6 +28,10 @@
 
         .teacher-only { display: none; }
 
+        .page-btn { background-color: #e0e0e0; color: #333; border: 1px solid #ccc; margin: 0 2px; padding: 6px 12px; font-size: 14px; border-radius: 4px; }
+        .page-btn.active { background-color: #007bff; color: white; border-color: #007bff; }
+        .add-page-btn { background-color: #28a745; color: white; border: none; padding: 6px 12px; font-size: 14px; border-radius: 4px; }
+
         #canvas-wrapper { width: 100%; height: 75vh; overflow: auto; border: 2px solid #ccc; background-color: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; }
         #lock-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 1000; color: white; font-size: 40px; font-weight: bold; align-items: center; justify-content: center; }
 
@@ -36,7 +40,6 @@
         .gallery-item { background: white; padding: 10px; border-radius: 8px; }
         .gallery-item img { width: 100%; border: 1px solid #ccc; border-radius: 4px; }
 
-        /* 🌟 タイマーの画面デザイン */
         #timer-widget { display: none; position: fixed; top: 80px; right: 30px; background: rgba(0,0,0,0.8); color: white; padding: 15px 20px; border-radius: 12px; z-index: 900; box-shadow: 0 4px 8px rgba(0,0,0,0.3); text-align: center; }
         #timer-display { font-size: 32px; font-family: monospace; font-weight: bold; letter-spacing: 2px; }
         .timer-btn { background: #555; color: white; border: none; padding: 5px 10px; margin: 2px; border-radius: 4px; font-size: 14px; cursor: pointer; }
@@ -84,6 +87,12 @@
             
             <span style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
 
+            <span style="font-weight: bold; font-size: 15px; color: #333;">ページ:</span>
+            <span id="page-list"></span>
+            <button id="addPageBtn" class="add-page-btn">＋ページ追加</button>
+
+            <span style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
+
             <select id="stickyColor">
                 <option value="#fff9c4">きいろ</option>
                 <option value="#ffcc80">オレンジ</option>
@@ -101,7 +110,7 @@
             <button id="lockBoardBtn" class="teacher-only danger-btn">注目！</button>
             <button id="viewGalleryBtn" class="teacher-only primary-btn">みんなの提出</button>
             <button id="exportPdfBtn" class="teacher-only pdf-btn">PDFで保存</button>
-            <button id="clearBtn" class="teacher-only danger-btn" style="background-color: #6c757d;">全消去</button>
+            <button id="clearBtn" class="teacher-only danger-btn" style="background-color: #6c757d;">ページ全消去</button>
         </div>
 
         <div id="canvas-wrapper">
