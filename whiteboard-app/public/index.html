@@ -39,13 +39,6 @@
         #gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
         .gallery-item { background: white; padding: 10px; border-radius: 8px; }
         .gallery-item img { width: 100%; border: 1px solid #ccc; border-radius: 4px; }
-
-        #timer-widget { display: none; position: fixed; top: 80px; right: 30px; background: rgba(0,0,0,0.8); color: white; padding: 15px 20px; border-radius: 12px; z-index: 900; box-shadow: 0 4px 8px rgba(0,0,0,0.3); text-align: center; }
-        #timer-display { font-size: 32px; font-family: monospace; font-weight: bold; letter-spacing: 2px; }
-        .timer-btn { background: #555; color: white; border: none; padding: 5px 10px; margin: 2px; border-radius: 4px; font-size: 14px; cursor: pointer; }
-        .timer-btn:hover { background: #777; }
-        #timerStartBtn { background: #28a745; }
-        #timerStopBtn { background: #dc3545; }
     </style>
 </head>
 <body>
@@ -62,17 +55,6 @@
             <label><input type="checkbox" id="isTeacherMode"> 先生モードで入る</label>
         </div>
         <button id="joinBtn">ボードに入る</button>
-    </div>
-
-    <div id="timer-widget">
-        <div style="font-size: 14px; color: #ccc; margin-bottom: 5px;">残り時間</div>
-        <div id="timer-display">05:00</div>
-        <div id="timer-controls" class="teacher-only" style="margin-top: 10px;">
-            <button class="timer-btn" id="timerPlusBtn">＋1分</button>
-            <button class="timer-btn" id="timerMinusBtn">－1分</button><br>
-            <button class="timer-btn" id="timerStartBtn" style="margin-top:5px;">スタート</button>
-            <button class="timer-btn" id="timerStopBtn" style="margin-top:5px;">ストップ</button>
-        </div>
     </div>
 
     <div id="whiteboard-screen">

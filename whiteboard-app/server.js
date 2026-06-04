@@ -47,10 +47,6 @@ io.on('connection', (socket) => {
         if (socket.roomName) socket.to(socket.roomName).emit('receive-submission', data);
     });
 
-    socket.on('sync-timer', (data) => {
-        if (socket.roomName) socket.to(socket.roomName).emit('sync-timer', data);
-    });
-
     socket.on('pointer-move', (data) => {
         if (socket.roomName) socket.to(socket.roomName).emit('pointer-move', data);
     });

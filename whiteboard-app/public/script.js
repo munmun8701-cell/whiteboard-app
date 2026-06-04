@@ -9,14 +9,12 @@ let remotePointers = {};
 
 let currentPage = 1;
 let maxPage = 1;
-let timerInterval = null;
-let currentSeconds = 300;
 
-// 要素を安全に取得する便利関数
+// 要素を安全に取得する関数
 function getEl(id) { return document.getElementById(id); }
 
 window.onload = () => {
-    // ボタンのクリックイベント（要素が存在する場合のみ設定する安全設計）
+    // 画面が読み込まれたらボタンの役割をセットする
     getEl('joinBtn')?.addEventListener('click', joinRoom);
     getEl('addPageBtn')?.addEventListener('click', addPage);
     getEl('deleteObjBtn')?.addEventListener('click', deleteSelected);
@@ -31,12 +29,6 @@ window.onload = () => {
     getEl('closeGalleryBtn')?.addEventListener('click', () => getEl('gallery-modal').style.display = 'none');
     getEl('exportPdfBtn')?.addEventListener('click', exportPDF);
     getEl('clearBtn')?.addEventListener('click', clearAll);
-
-    // タイマーボタン
-    getEl('timerPlusBtn')?.addEventListener('click', () => updateTimerAmount(60));
-    getEl('timerMinusBtn')?.addEventListener('click', () => updateTimerAmount(-60));
-    getEl('timerStartBtn')?.addEventListener('click', () => { socket.emit('sync-timer', { action: 'start' }); startTimer(); });
-    getEl('timerStopBtn')?.addEventListener('click', () => { socket.emit('sync-timer', { action: 'stop' }); stopTimer(); });
 };
 
 function joinRoom() {
@@ -49,13 +41,10 @@ function joinRoom() {
     socket.emit('join-room', myRoom);
     getEl('login-screen').style.display = 'none';
     getEl('whiteboard-screen').style.display = 'block';
-    getEl('timer-widget').style.display = 'block';
     
     if (isTeacher) {
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
         if(getEl('submitBtn')) getEl('submitBtn').style.display = 'none';
-        updateTimerDisplay();
-        socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
     } else {
         if(getEl('submitBtn')) getEl('submitBtn').style.display = 'inline-block';
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'none');
@@ -116,6 +105,7 @@ function initCanvas() {
         return { x: wrapper.scrollLeft + 100, y: wrapper.scrollTop + 100 };
     }
 
+    // 学習枠の追加機能
     window.createBoardFrame = function(type) {
         const isGaku = (type === '学');
         const color = '#1e88e5'; 
@@ -139,6 +129,7 @@ function initCanvas() {
         emitCanvasData();
     };
 
+    // ふせんの追加機能
     window.addSticky = function() {
         const selectedColor = getEl('stickyColor')?.value || '#fff9c4';
         const offset = getScrollOffset();
@@ -159,6 +150,7 @@ function initCanvas() {
         emitCanvasData();
     };
 
+    // ポインター機能
     canvas.on('mouse:move', (options) => {
         if (getEl('tool')?.value === 'pointer') {
             const pointer = canvas.getPointer(options.e);
@@ -183,6 +175,7 @@ function initCanvas() {
         p.timeout = setTimeout(() => { canvas.remove(p.group); delete remotePointers[data.author]; canvas.renderAll(); }, 2000);
     });
 
+    // テキスト入力
     canvas.on('mouse:down', (options) => {
         if (getEl('tool')?.value === 'text' && !canvas.isDrawingMode) {
             const pointer = canvas.getPointer(options.e);
@@ -197,6 +190,7 @@ function initCanvas() {
         }
     });
 
+    // お絵かき・移動の通信
     canvas.on('path:created', (options) => {
         options.path.set({ author: myName, timestamp: new Date().toLocaleString() });
         setPermissions(options.path);
@@ -205,6 +199,7 @@ function initCanvas() {
 
     canvas.on('object:modified', () => emitCanvasData());
 
+    // 削除機能
     window.deleteSelected = function() {
         const activeObjects = canvas.getActiveObjects();
         if (activeObjects.length === 0) return;
@@ -219,6 +214,7 @@ function initCanvas() {
         }
     });
 
+    // 画像貼り付け機能
     window.addEventListener('paste', (e) => {
         if (isLocked && !isTeacher) return;
         const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -248,6 +244,7 @@ function initCanvas() {
         }
     });
 
+    // サーバーへのデータ送信
     function emitCanvasData() {
         if (isReceiving) return;
         const objectsToSave = canvas.getObjects().filter(obj => obj.author);
@@ -255,6 +252,7 @@ function initCanvas() {
         socket.emit('canvas-data', { page: currentPage, canvas: json });
     }
 
+    // サーバーからのデータ受信
     socket.on('canvas-data', (data) => {
         const targetPage = data.page || 1;
         if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
@@ -279,6 +277,7 @@ function initCanvas() {
         });
     });
 
+    // 全消去機能
     window.clearAll = function() {
         if(confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
             canvas.clear();
@@ -286,9 +285,9 @@ function initCanvas() {
             emitCanvasData(); 
         }
     };
-    
     socket.on('clear-canvas-local', () => canvas.clear());
 
+    // 注目（ロック）機能
     window.toggleLock = function() {
         isLocked = !isLocked;
         socket.emit('lock-board', isLocked);
@@ -314,6 +313,7 @@ function initCanvas() {
         }
     });
 
+    // 提出（オクリンク風）機能
     window.submitWork = function() {
         const dataURL = canvas.toDataURL({ format: 'png', quality: 0.8 });
         socket.emit('submit-work', { author: `${myName} (P.${currentPage})`, image: dataURL, time: new Date().toLocaleTimeString() });
@@ -342,6 +342,7 @@ function initCanvas() {
         }
     });
 
+    // PDFエクスポート機能
     window.exportPDF = function() {
         if (typeof window.jspdf === 'undefined') return alert('PDF作成プログラムが読み込まれていません。画面を更新してください。');
         const { jsPDF } = window.jspdf;
@@ -353,44 +354,3 @@ function initCanvas() {
         pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
     };
 }
-
-// タイマー機能の共通関数
-function updateTimerDisplay() {
-    const disp = getEl('timer-display');
-    if(!disp) return;
-    const m = Math.floor(currentSeconds / 60).toString().padStart(2, '0');
-    const s = (currentSeconds % 60).toString().padStart(2, '0');
-    disp.textContent = `${m}:${s}`;
-    disp.style.color = (currentSeconds <= 10 && currentSeconds > 0) ? '#ff4444' : 'white';
-}
-
-function updateTimerAmount(amount) {
-    currentSeconds += amount;
-    if (currentSeconds < 0) currentSeconds = 0;
-    updateTimerDisplay();
-    socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
-}
-
-function startTimer() {
-    clearInterval(timerInterval);
-    timerInterval = setInterval(() => {
-        if (currentSeconds > 0) {
-            currentSeconds--;
-            updateTimerDisplay();
-            if (isTeacher) socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
-        } else {
-            stopTimer();
-            if (isTeacher) alert('時間です！'); 
-        }
-    }, 1000);
-}
-
-function stopTimer() {
-    clearInterval(timerInterval);
-}
-
-socket.on('sync-timer', (data) => {
-    if (data.action === 'update') { currentSeconds = data.seconds; updateTimerDisplay(); } 
-    else if (data.action === 'start') { startTimer(); } 
-    else if (data.action === 'stop') { stopTimer(); }
-});
