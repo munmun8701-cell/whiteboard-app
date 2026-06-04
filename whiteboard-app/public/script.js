@@ -5,6 +5,7 @@ let myName = '';
 let myRoom = '';
 let isTeacher = false;
 let isLocked = false;
+let remotePointers = {}; // 🌟 ポインター管理用
 
 const loginScreen = document.getElementById('login-screen');
 const whiteboardScreen = document.getElementById('whiteboard-screen');
@@ -24,11 +25,22 @@ const galleryModal = document.getElementById('gallery-modal');
 const galleryGrid = document.getElementById('gallery-grid');
 const closeGalleryBtn = document.getElementById('closeGalleryBtn');
 
-// 新機能のボタン
 const addGakuBtn = document.getElementById('addGakuBtn');
 const addMaBtn = document.getElementById('addMaBtn');
 const addStickyBtn = document.getElementById('addStickyBtn');
+const stickyColorSelect = document.getElementById('stickyColor');
 const exportPdfBtn = document.getElementById('exportPdfBtn');
+const canvasWrapper = document.getElementById('canvas-wrapper');
+
+// 🌟 タイマー用の変数と要素
+let timerInterval = null;
+let currentSeconds = 300; // 初期値5分（300秒）
+const timerWidget = document.getElementById('timer-widget');
+const timerDisplay = document.getElementById('timer-display');
+const timerPlusBtn = document.getElementById('timerPlusBtn');
+const timerMinusBtn = document.getElementById('timerMinusBtn');
+const timerStartBtn = document.getElementById('timerStartBtn');
+const timerStopBtn = document.getElementById('timerStopBtn');
 
 joinBtn.addEventListener('click', () => {
     myName = usernameInput.value.trim();
@@ -43,10 +55,15 @@ joinBtn.addEventListener('click', () => {
     socket.emit('join-room', myRoom);
     loginScreen.style.display = 'none';
     whiteboardScreen.style.display = 'block';
+    timerWidget.style.display = 'block'; // 入室したらタイマー表示
     
     if (isTeacher) {
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
         submitBtn.style.display = 'none';
+        
+        // 先生が初めに入った時、今の時間を送信して同期させる
+        updateTimerDisplay();
+        socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
     } else {
         submitBtn.style.display = 'inline-block';
     }
@@ -55,7 +72,7 @@ joinBtn.addEventListener('click', () => {
 });
 
 function initCanvas() {
-    canvas = new fabric.Canvas('canvas', { isDrawingMode: true });
+    canvas = new fabric.Canvas('canvas', { isDrawingMode: false }); // 初期はポインターモード
 
     toolSelect.addEventListener('change', (e) => {
         if (isLocked && !isTeacher) {
@@ -78,41 +95,26 @@ function initCanvas() {
         }
     }
 
-    // 🌟 新機能：板書枠を作る関数（〇学、〇ま）
+    function getScrollOffset() {
+        return { x: canvasWrapper.scrollLeft + 50, y: canvasWrapper.scrollTop + 50 };
+    }
+
     function createBoardFrame(type) {
         const isGaku = (type === '学');
-        const color = isGaku ? '#e53935' : '#1e88e5'; // 学は赤、まは青
+        const color = '#1e88e5'; 
 
-        // 左上の「〇文字」のバッジ
-        const circle = new fabric.Circle({
-            radius: 20, fill: 'white', stroke: color, strokeWidth: 4,
-            originX: 'center', originY: 'center'
-        });
-        const text = new fabric.Text(type, {
-            fontSize: 24, fill: color, fontWeight: 'bold',
-            originX: 'center', originY: 'center'
-        });
-        const badge = new fabric.Group([circle, text], {
-            left: -20, top: -20
-        });
+        const circle = new fabric.Circle({ radius: 20, fill: 'white', stroke: color, strokeWidth: 4, originX: 'center', originY: 'center' });
+        const text = new fabric.Text(type, { fontSize: 24, fill: color, fontWeight: 'bold', originX: 'center', originY: 'center' });
+        const badge = new fabric.Group([circle, text], { left: -20, top: -20 });
 
-        // 四角い枠
-        const rect = new fabric.Rect({
-            left: 0, top: 0, width: 450, height: 120,
-            fill: 'transparent', stroke: color, strokeWidth: 4, rx: 8, ry: 8
-        });
+        const rect = new fabric.Rect({ left: 0, top: 0, width: 450, height: 120, fill: 'transparent', stroke: color, strokeWidth: 4, rx: 8, ry: 8 });
 
-        // 枠とバッジを合体
-        const frameGroup = new fabric.Group([rect, badge], {
-            left: 50, top: 50, author: myName, timestamp: new Date().toLocaleString()
-        });
+        const offset = getScrollOffset();
+        const frameGroup = new fabric.Group([rect, badge], { left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
         setPermissions(frameGroup);
         canvas.add(frameGroup);
 
-        // 枠の中に入力用のテキストを自動配置
-        const innerText = new fabric.IText(isGaku ? 'めあてを入力...' : 'まとめを入力...', {
-            left: 90, top: 80, fontSize: 24, fill: '#333', author: myName
-        });
+        const innerText = new fabric.IText(isGaku ? 'めあてを入力...' : 'まとめを入力...', { left: offset.x + 40, top: offset.y + 30, fontSize: 24, fill: '#333', author: myName });
         setPermissions(innerText);
         canvas.add(innerText);
 
@@ -126,25 +128,15 @@ function initCanvas() {
         addMaBtn.addEventListener('click', () => createBoardFrame('ま'));
     }
 
-    // 🌟 新機能：オクリンク風の「ふせん（カード）」を追加
     addStickyBtn.addEventListener('click', () => {
-        // パステルカラーのふせんをランダムに作成
-        const colors = ['#fff9c4', '#ffcc80', '#c8e6c9', '#bbdefb', '#f8bbd0'];
-        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+        const selectedColor = stickyColorSelect.value;
+        const offset = getScrollOffset();
 
         const stickyText = new fabric.IText('ここに入力', {
-            left: Math.random() * 200 + 50, // 少しずらして出現
-            top: Math.random() * 200 + 50,
-            fontSize: 22,
-            padding: 15,
-            backgroundColor: randomColor,
-            fill: '#333',
-            author: myName,
-            timestamp: new Date().toLocaleString(),
-            // ふせんっぽい影をつける
+            left: offset.x + Math.random() * 100, top: offset.y + Math.random() * 100,
+            fontSize: 22, padding: 15, backgroundColor: selectedColor, fill: '#333', author: myName, timestamp: new Date().toLocaleString(),
             shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 })
         });
-
         setPermissions(stickyText);
         canvas.add(stickyText);
         canvas.setActiveObject(stickyText);
@@ -156,31 +148,59 @@ function initCanvas() {
         emitCanvasData();
     });
 
-    // 🌟 新機能：PDFエクスポート（完全版）
     if (isTeacher) {
         exportPdfBtn.addEventListener('click', () => {
             const { jsPDF } = window.jspdf;
-            // キャンバスのサイズに合わせて横向きのPDFを作成
-            const pdf = new jsPDF({
-                orientation: 'landscape',
-                unit: 'px',
-                format: [canvas.width, canvas.height]
-            });
-            // キャンバスを綺麗な画像（JPEG）に変換してPDFに貼り付け
-            const imgData = canvas.toDataURL({ format: 'jpeg', quality: 1.0 });
-            pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+            const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
+            const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
             pdf.save(`ボード記録_${myRoom}.pdf`);
         });
     }
 
-    // --- 以下、既存の機能 ---
+    // 🌟 1. ポインター機能：マウスが動いた時の処理
+    canvas.on('mouse:move', function(options) {
+        if (toolSelect.value === 'pointer') {
+            const pointer = canvas.getPointer(options.e);
+            socket.emit('pointer-move', { author: myName, x: pointer.x, y: pointer.y });
+        }
+    });
+
+    // 🌟 他の人のポインターデータを受信した時の処理
+    socket.on('pointer-move', (data) => {
+        if (!remotePointers[data.author]) {
+            // 新しい人なら、赤い丸と名前のラベルを作る
+            const circle = new fabric.Circle({ radius: 8, fill: 'red', originX: 'center', originY: 'center', shadow: new fabric.Shadow({ color: 'red', blur: 10 }) });
+            const nameText = new fabric.Text(data.author, { fontSize: 16, fill: 'red', top: 15, originX: 'center', fontWeight: 'bold' });
+            const pointerGroup = new fabric.Group([circle, nameText], {
+                selectable: false, evented: false // 触れないようにする
+            });
+            canvas.add(pointerGroup);
+            remotePointers[data.author] = { group: pointerGroup, timeout: null };
+        }
+        
+        const p = remotePointers[data.author];
+        p.group.set({ left: data.x, top: data.y }); // 位置を更新
+        canvas.renderAll();
+
+        // 2秒間動かなかったらポインターを消す
+        clearTimeout(p.timeout);
+        p.timeout = setTimeout(() => {
+            canvas.remove(p.group);
+            delete remotePointers[data.author];
+            canvas.renderAll();
+        }, 2000);
+    });
+
     canvas.on('mouse:down', function(options) {
+        // ポインターモードの時は文字入力や線引きを発動させない
+        if (toolSelect.value === 'pointer') return; 
+
         if (toolSelect.value === 'text' && !canvas.isDrawingMode) {
             const pointer = canvas.getPointer(options.e);
-            const text = new fabric.IText('ここに入力', {
-                left: pointer.x, top: pointer.y, fill: colorPicker.value, fontSize: 24,
-                author: myName, timestamp: new Date().toLocaleString()
-            });
+            const text = new fabric.IText('ここに入力', { left: pointer.x, top: pointer.y, fill: colorPicker.value, fontSize: 24, author: myName, timestamp: new Date().toLocaleString() });
             setPermissions(text);
             canvas.add(text);
             canvas.setActiveObject(text);
@@ -230,7 +250,8 @@ function initCanvas() {
                     imgObj.src = event.target.result;
                     imgObj.onload = function () {
                         const image = new fabric.Image(imgObj);
-                        image.set({ left: 50, top: 50, author: myName, timestamp: new Date().toLocaleString() });
+                        const offset = getScrollOffset(); 
+                        image.set({ left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
                         if (image.width > 600) image.scaleToWidth(600);
                         setPermissions(image);
                         canvas.add(image);
@@ -247,7 +268,9 @@ function initCanvas() {
 
     function emitCanvasData() {
         if (isReceiving) return;
-        const json = canvas.toJSON(['author', 'timestamp']);
+        // 🌟 保存時にポインターの赤丸が残らないように、authorがあるもの（描画データ）だけを送信する
+        const objectsToSave = canvas.getObjects().filter(obj => obj.author);
+        const json = { objects: objectsToSave.map(obj => obj.toObject(['author', 'timestamp'])) };
         socket.emit('canvas-data', json);
     }
 
@@ -327,4 +350,74 @@ function initCanvas() {
         }
     });
     socket.on('clear-canvas', () => canvas.clear());
+
+    // 🌟 2. タイマー機能の仕組み
+    function updateTimerDisplay() {
+        const m = Math.floor(currentSeconds / 60).toString().padStart(2, '0');
+        const s = (currentSeconds % 60).toString().padStart(2, '0');
+        timerDisplay.textContent = `${m}:${s}`;
+        
+        // 残り時間が10秒を切ったら赤くする演出
+        if (currentSeconds <= 10 && currentSeconds > 0) {
+            timerDisplay.style.color = '#ff4444';
+        } else {
+            timerDisplay.style.color = 'white';
+        }
+    }
+
+    if (isTeacher) {
+        timerPlusBtn.addEventListener('click', () => {
+            currentSeconds += 60;
+            updateTimerDisplay();
+            socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
+        });
+        
+        timerMinusBtn.addEventListener('click', () => {
+            if (currentSeconds >= 60) currentSeconds -= 60;
+            updateTimerDisplay();
+            socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
+        });
+
+        timerStartBtn.addEventListener('click', () => {
+            socket.emit('sync-timer', { action: 'start' });
+            startTimer();
+        });
+
+        timerStopBtn.addEventListener('click', () => {
+            socket.emit('sync-timer', { action: 'stop' });
+            stopTimer();
+        });
+    }
+
+    function startTimer() {
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            if (currentSeconds > 0) {
+                currentSeconds--;
+                updateTimerDisplay();
+                // 先生側から1秒ごとに生徒へ正確な時間を送信してズレを防ぐ
+                if (isTeacher) {
+                    socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
+                }
+            } else {
+                stopTimer();
+                if (isTeacher) alert('時間です！');
+            }
+        }, 1000);
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+    }
+
+    socket.on('sync-timer', (data) => {
+        if (data.action === 'update') {
+            currentSeconds = data.seconds;
+            updateTimerDisplay();
+        } else if (data.action === 'start') {
+            startTimer();
+        } else if (data.action === 'stop') {
+            stopTimer();
+        }
+    });
 }

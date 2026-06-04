@@ -34,19 +34,22 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 🌟 新機能：先生がロックをかけたときの通信
     socket.on('lock-board', (isLocked) => {
-        if (socket.roomName) {
-            socket.to(socket.roomName).emit('lock-board', isLocked);
-        }
+        if (socket.roomName) socket.to(socket.roomName).emit('lock-board', isLocked);
     });
 
-    // 🌟 新機能：生徒が提出ボタンを押したときの通信
     socket.on('submit-work', (data) => {
-        if (socket.roomName) {
-            // 提出された画像を、同じ部屋の先生（全員）に転送
-            socket.to(socket.roomName).emit('receive-submission', data);
-        }
+        if (socket.roomName) socket.to(socket.roomName).emit('receive-submission', data);
+    });
+
+    // 🌟 新機能：ポインターの動きを全員に転送
+    socket.on('pointer-move', (data) => {
+        if (socket.roomName) socket.to(socket.roomName).emit('pointer-move', data);
+    });
+
+    // 🌟 新機能：タイマーの時間を全員に転送
+    socket.on('sync-timer', (data) => {
+        if (socket.roomName) socket.to(socket.roomName).emit('sync-timer', data);
     });
 
     socket.on('disconnect', () => {
