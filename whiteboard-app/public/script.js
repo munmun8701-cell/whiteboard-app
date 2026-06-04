@@ -9,126 +9,99 @@ let remotePointers = {};
 
 let currentPage = 1;
 let maxPage = 1;
-
-// UI要素の取得
-const loginScreen = document.getElementById('login-screen');
-const whiteboardScreen = document.getElementById('whiteboard-screen');
-const usernameInput = document.getElementById('username');
-const roomNameInput = document.getElementById('roomName');
-const isTeacherModeCheck = document.getElementById('isTeacherMode');
-const joinBtn = document.getElementById('joinBtn');
-const toolSelect = document.getElementById('tool');
-const colorPicker = document.getElementById('colorPicker');
-const clearBtn = document.getElementById('clearBtn');
-const deleteObjBtn = document.getElementById('deleteObjBtn');
-const lockBoardBtn = document.getElementById('lockBoardBtn');
-const lockOverlay = document.getElementById('lock-overlay');
-const submitBtn = document.getElementById('submitBtn');
-const viewGalleryBtn = document.getElementById('viewGalleryBtn');
-const galleryModal = document.getElementById('gallery-modal');
-const galleryGrid = document.getElementById('gallery-grid');
-const closeGalleryBtn = document.getElementById('closeGalleryBtn');
-
-const addGakuBtn = document.getElementById('addGakuBtn');
-const addMaBtn = document.getElementById('addMaBtn');
-const addStickyBtn = document.getElementById('addStickyBtn');
-const stickyColorSelect = document.getElementById('stickyColor');
-const exportPdfBtn = document.getElementById('exportPdfBtn');
-const canvasWrapper = document.getElementById('canvas-wrapper');
-
-const pageListContainer = document.getElementById('page-list');
-const addPageBtn = document.getElementById('addPageBtn');
-
-// タイマー関連
 let timerInterval = null;
 let currentSeconds = 300;
-const timerWidget = document.getElementById('timer-widget');
-const timerDisplay = document.getElementById('timer-display');
-const timerPlusBtn = document.getElementById('timerPlusBtn');
-const timerMinusBtn = document.getElementById('timerMinusBtn');
-const timerStartBtn = document.getElementById('timerStartBtn');
-const timerStopBtn = document.getElementById('timerStopBtn');
-const timerControls = document.getElementById('timer-controls'); // 追加
 
-// 入室処理
-joinBtn.addEventListener('click', () => {
-    myName = usernameInput.value.trim();
-    myRoom = roomNameInput.value.trim();
-    isTeacher = isTeacherModeCheck.checked;
+// 要素を安全に取得する便利関数
+function getEl(id) { return document.getElementById(id); }
 
-    if (myName === '' || myRoom === '') {
-        alert('なまえ と あいことば をいれてね！');
-        return;
-    }
+window.onload = () => {
+    // ボタンのクリックイベント（要素が存在する場合のみ設定する安全設計）
+    getEl('joinBtn')?.addEventListener('click', joinRoom);
+    getEl('addPageBtn')?.addEventListener('click', addPage);
+    getEl('deleteObjBtn')?.addEventListener('click', deleteSelected);
+    getEl('addStickyBtn')?.addEventListener('click', addSticky);
+    getEl('submitBtn')?.addEventListener('click', submitWork);
+    
+    // 先生用ボタン
+    getEl('addGakuBtn')?.addEventListener('click', () => createBoardFrame('学'));
+    getEl('addMaBtn')?.addEventListener('click', () => createBoardFrame('ま'));
+    getEl('lockBoardBtn')?.addEventListener('click', toggleLock);
+    getEl('viewGalleryBtn')?.addEventListener('click', () => getEl('gallery-modal').style.display = 'block');
+    getEl('closeGalleryBtn')?.addEventListener('click', () => getEl('gallery-modal').style.display = 'none');
+    getEl('exportPdfBtn')?.addEventListener('click', exportPDF);
+    getEl('clearBtn')?.addEventListener('click', clearAll);
+
+    // タイマーボタン
+    getEl('timerPlusBtn')?.addEventListener('click', () => updateTimerAmount(60));
+    getEl('timerMinusBtn')?.addEventListener('click', () => updateTimerAmount(-60));
+    getEl('timerStartBtn')?.addEventListener('click', () => { socket.emit('sync-timer', { action: 'start' }); startTimer(); });
+    getEl('timerStopBtn')?.addEventListener('click', () => { socket.emit('sync-timer', { action: 'stop' }); stopTimer(); });
+};
+
+function joinRoom() {
+    myName = getEl('username')?.value.trim();
+    myRoom = getEl('roomName')?.value.trim();
+    isTeacher = getEl('isTeacherMode')?.checked || false;
+
+    if (!myName || !myRoom) return alert('なまえ と あいことば をいれてね！');
 
     socket.emit('join-room', myRoom);
-    loginScreen.style.display = 'none';
-    whiteboardScreen.style.display = 'block';
-    timerWidget.style.display = 'block';
+    getEl('login-screen').style.display = 'none';
+    getEl('whiteboard-screen').style.display = 'block';
+    getEl('timer-widget').style.display = 'block';
     
-    // 先生・生徒で表示を切り替え
     if (isTeacher) {
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
-        submitBtn.style.display = 'none';
-        timerControls.style.display = 'block'; // 先生にはタイマー操作を見せる
+        if(getEl('submitBtn')) getEl('submitBtn').style.display = 'none';
         updateTimerDisplay();
         socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
     } else {
-        submitBtn.style.display = 'inline-block';
-        timerControls.style.display = 'none'; // 生徒にはタイマー操作を見せない
-        // 生徒用は余分なボタンを隠す
+        if(getEl('submitBtn')) getEl('submitBtn').style.display = 'inline-block';
         document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'none');
     }
 
     renderPageButtons();
     initCanvas();
-});
+}
 
-// ページ切り替えUI
 function renderPageButtons() {
-    pageListContainer.innerHTML = '';
+    const container = getEl('page-list');
+    if(!container) return;
+    container.innerHTML = '';
     for (let i = 1; i <= maxPage; i++) {
         const btn = document.createElement('button');
         btn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
         btn.textContent = i;
-        btn.addEventListener('click', () => {
-            if (i === currentPage) return;
-            switchPage(i);
-        });
-        pageListContainer.appendChild(btn);
+        btn.onclick = () => { if (i !== currentPage) switchPage(i); };
+        container.appendChild(btn);
     }
 }
 
 function switchPage(pageNumber) {
     currentPage = pageNumber;
     renderPageButtons();
-    canvas.clear();
+    if(canvas) canvas.clear();
     socket.emit('switch-page', pageNumber);
 }
 
-addPageBtn.addEventListener('click', () => {
+function addPage() {
     maxPage++;
     switchPage(maxPage);
-});
+}
 
-// キャンバス初期化
 function initCanvas() {
     canvas = new fabric.Canvas('canvas', { isDrawingMode: false });
 
-    // ツール切り替え
-    toolSelect.addEventListener('change', (e) => {
-        if (isLocked && !isTeacher) {
-            canvas.isDrawingMode = false;
-            return;
-        }
+    getEl('tool')?.addEventListener('change', (e) => {
+        if (isLocked && !isTeacher) return (canvas.isDrawingMode = false);
         canvas.isDrawingMode = (e.target.value === 'draw');
     });
 
-    colorPicker.addEventListener('change', (e) => {
+    getEl('colorPicker')?.addEventListener('change', (e) => {
         canvas.freeDrawingBrush.color = e.target.value;
     });
 
-    // 権限設定（いたずら防止）
     function setPermissions(obj) {
         if (isTeacher) {
             obj.set({ selectable: true, evented: true });
@@ -138,25 +111,21 @@ function initCanvas() {
         }
     }
 
-    // スクロール位置の取得（付箋などを画面の中心に出すため）
     function getScrollOffset() {
-        // キャンバスラッパーが存在するかチェック
-        const wrapper = canvasWrapper || document.body; 
+        const wrapper = getEl('canvas-wrapper') || document.body; 
         return { x: wrapper.scrollLeft + 100, y: wrapper.scrollTop + 100 };
     }
 
-    // 学習枠（めあて・まとめ）の追加
-    function createBoardFrame(type) {
+    window.createBoardFrame = function(type) {
         const isGaku = (type === '学');
         const color = '#1e88e5'; 
+        const offset = getScrollOffset();
 
         const circle = new fabric.Circle({ radius: 20, fill: 'white', stroke: color, strokeWidth: 4, originX: 'center', originY: 'center' });
         const text = new fabric.Text(type, { fontSize: 24, fill: color, fontWeight: 'bold', originX: 'center', originY: 'center' });
         const badge = new fabric.Group([circle, text], { left: -20, top: -20 });
-
         const rect = new fabric.Rect({ left: 0, top: 0, width: 450, height: 120, fill: 'transparent', stroke: color, strokeWidth: 4, rx: 8, ry: 8 });
 
-        const offset = getScrollOffset();
         const frameGroup = new fabric.Group([rect, badge], { left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
         setPermissions(frameGroup);
         canvas.add(frameGroup);
@@ -165,19 +134,13 @@ function initCanvas() {
         setPermissions(innerText);
         canvas.add(innerText);
 
-        toolSelect.value = 'select';
+        if(getEl('tool')) getEl('tool').value = 'select';
         canvas.isDrawingMode = false;
         emitCanvasData();
-    }
+    };
 
-    if (isTeacher) {
-        addGakuBtn.addEventListener('click', () => createBoardFrame('学'));
-        addMaBtn.addEventListener('click', () => createBoardFrame('ま'));
-    }
-
-    // ふせんの追加
-    addStickyBtn.addEventListener('click', () => {
-        const selectedColor = stickyColorSelect.value;
+    window.addSticky = function() {
+        const selectedColor = getEl('stickyColor')?.value || '#fff9c4';
         const offset = getScrollOffset();
 
         const stickyText = new fabric.IText('ここに入力', {
@@ -191,31 +154,13 @@ function initCanvas() {
         stickyText.enterEditing();
         stickyText.selectAll();
         
-        toolSelect.value = 'select';
+        if(getEl('tool')) getEl('tool').value = 'select';
         canvas.isDrawingMode = false;
         emitCanvasData();
-    });
+    };
 
-    // PDFエクスポート
-    if (isTeacher) {
-        exportPdfBtn.addEventListener('click', () => {
-            if (typeof window.jspdf === 'undefined') {
-                alert('PDF作成プログラムが読み込まれていません。画面を更新してください。');
-                return;
-            }
-            const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
-            const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
-        });
-    }
-
-    // ポインター機能
-    canvas.on('mouse:move', function(options) {
-        if (toolSelect.value === 'pointer') {
+    canvas.on('mouse:move', (options) => {
+        if (getEl('tool')?.value === 'pointer') {
             const pointer = canvas.getPointer(options.e);
             socket.emit('pointer-move', { author: myName, page: currentPage, x: pointer.x, y: pointer.y });
         }
@@ -223,7 +168,6 @@ function initCanvas() {
 
     socket.on('pointer-move', (data) => {
         if (data.page !== currentPage) return;
-
         if (!remotePointers[data.author]) {
             const circle = new fabric.Circle({ radius: 8, fill: 'red', originX: 'center', originY: 'center', shadow: new fabric.Shadow({ color: 'red', blur: 10 }) });
             const nameText = new fabric.Text(data.author, { fontSize: 16, fill: 'red', top: 15, originX: 'center', fontWeight: 'bold' });
@@ -231,66 +175,50 @@ function initCanvas() {
             canvas.add(pointerGroup);
             remotePointers[data.author] = { group: pointerGroup, timeout: null };
         }
-        
         const p = remotePointers[data.author];
         p.group.set({ left: data.x, top: data.y });
         canvas.renderAll();
 
         clearTimeout(p.timeout);
-        p.timeout = setTimeout(() => {
-            canvas.remove(p.group);
-            delete remotePointers[data.author];
-            canvas.renderAll();
-        }, 2000);
+        p.timeout = setTimeout(() => { canvas.remove(p.group); delete remotePointers[data.author]; canvas.renderAll(); }, 2000);
     });
 
-    // テキスト入力
-    canvas.on('mouse:down', function(options) {
-        if (toolSelect.value === 'pointer') return; 
-
-        if (toolSelect.value === 'text' && !canvas.isDrawingMode) {
+    canvas.on('mouse:down', (options) => {
+        if (getEl('tool')?.value === 'text' && !canvas.isDrawingMode) {
             const pointer = canvas.getPointer(options.e);
-            const text = new fabric.IText('ここに入力', { left: pointer.x, top: pointer.y, fill: colorPicker.value, fontSize: 24, author: myName, timestamp: new Date().toLocaleString() });
+            const text = new fabric.IText('ここに入力', { left: pointer.x, top: pointer.y, fill: getEl('colorPicker')?.value || '#000', fontSize: 24, author: myName, timestamp: new Date().toLocaleString() });
             setPermissions(text);
             canvas.add(text);
             canvas.setActiveObject(text);
             text.enterEditing();
             text.selectAll();
             emitCanvasData();
-            toolSelect.value = 'select'; 
+            getEl('tool').value = 'select'; 
         }
     });
 
-    // 線を描いたとき
-    canvas.on('path:created', function(options) {
+    canvas.on('path:created', (options) => {
         options.path.set({ author: myName, timestamp: new Date().toLocaleString() });
         setPermissions(options.path);
         emitCanvasData();
     });
 
-    // 動かしたとき
     canvas.on('object:modified', () => emitCanvasData());
 
-    // 削除処理
-    deleteObjBtn.addEventListener('click', () => {
+    window.deleteSelected = function() {
         const activeObjects = canvas.getActiveObjects();
         if (activeObjects.length === 0) return;
-        activeObjects.forEach(obj => {
-            if (isTeacher || obj.author === myName) canvas.remove(obj);
-        });
+        activeObjects.forEach(obj => { if (isTeacher || obj.author === myName) canvas.remove(obj); });
         canvas.discardActiveObject();
         emitCanvasData();
-    });
+    };
 
     window.addEventListener('keydown', (e) => {
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-            if (e.target.tagName !== 'INPUT' && !canvas.getActiveObject()?.isEditing) {
-                deleteObjBtn.click();
-            }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && e.target.tagName !== 'INPUT' && !canvas.getActiveObject()?.isEditing) {
+            deleteSelected();
         }
     });
 
-    // 画像貼り付け
     window.addEventListener('paste', (e) => {
         if (isLocked && !isTeacher) return;
         const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -299,10 +227,10 @@ function initCanvas() {
             if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {
                 const blob = item.getAsFile();
                 const reader = new FileReader();
-                reader.onload = function(event) {
+                reader.onload = (event) => {
                     const imgObj = new Image();
                     imgObj.src = event.target.result;
-                    imgObj.onload = function () {
+                    imgObj.onload = () => {
                         const image = new fabric.Image(imgObj);
                         const offset = getScrollOffset(); 
                         image.set({ left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
@@ -310,7 +238,7 @@ function initCanvas() {
                         setPermissions(image);
                         canvas.add(image);
                         canvas.setActiveObject(image);
-                        toolSelect.value = 'select';
+                        if(getEl('tool')) getEl('tool').value = 'select';
                         canvas.isDrawingMode = false;
                         emitCanvasData();
                     }
@@ -320,7 +248,6 @@ function initCanvas() {
         }
     });
 
-    // 通信（データ送信）
     function emitCanvasData() {
         if (isReceiving) return;
         const objectsToSave = canvas.getObjects().filter(obj => obj.author);
@@ -328,174 +255,142 @@ function initCanvas() {
         socket.emit('canvas-data', { page: currentPage, canvas: json });
     }
 
-    // 通信（データ受信）
     socket.on('canvas-data', (data) => {
         const targetPage = data.page || 1;
-        
-        if (targetPage > maxPage) {
-            maxPage = targetPage;
-            renderPageButtons();
-        }
-
+        if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
         if (targetPage !== currentPage) return; 
 
         isReceiving = true;
-        const canvasRaw = data.canvas ? data.canvas : data;
+        const canvasRaw = data.canvas || data;
         
-        // データが空の場合の処理
-        if (!canvasRaw || (Object.keys(canvasRaw).length === 0)) {
+        if (!canvasRaw || Object.keys(canvasRaw).length === 0) {
              canvas.clear();
              isReceiving = false;
              return;
         }
 
-        canvas.loadFromJSON(canvasRaw, function() {
+        canvas.loadFromJSON(canvasRaw, () => {
             canvas.renderAll();
             isReceiving = false;
-        }, function(o, object) {
+        }, (o, object) => {
             object.set('author', o.author);
             object.set('timestamp', o.timestamp);
             setPermissions(object);
         });
     });
 
-    // ぜんぶけす
-    clearBtn.addEventListener('click', () => {
+    window.clearAll = function() {
         if(confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
             canvas.clear();
-            socket.emit('clear-canvas'); // サーバーにクリアを通知
-            emitCanvasData(); // 空になった状態を送信して上書き
+            socket.emit('clear-canvas'); 
+            emitCanvasData(); 
         }
-    });
+    };
     
-    socket.on('clear-canvas-local', () => {
-        canvas.clear();
-    });
+    socket.on('clear-canvas-local', () => canvas.clear());
 
-    // 注目！（ロック機能）
-    if (isTeacher) {
-        lockBoardBtn.addEventListener('click', () => {
-            const willLock = !isLocked;
-            socket.emit('lock-board', willLock);
-            lockBoardBtn.textContent = willLock ? 'ロック解除' : '注目！';
-            lockBoardBtn.style.backgroundColor = willLock ? '#28a745' : '#dc3545';
-            isLocked = willLock;
-        });
-    }
+    window.toggleLock = function() {
+        isLocked = !isLocked;
+        socket.emit('lock-board', isLocked);
+        const btn = getEl('lockBoardBtn');
+        if(btn) {
+            btn.textContent = isLocked ? 'ロック解除' : '注目！';
+            btn.style.backgroundColor = isLocked ? '#28a745' : '#dc3545';
+        }
+    };
 
     socket.on('lock-board', (lockedState) => {
         if (!isTeacher) {
             isLocked = lockedState;
+            const overlay = getEl('lock-overlay');
             if (isLocked) {
-                lockOverlay.style.display = 'flex';
+                if(overlay) overlay.style.display = 'flex';
                 canvas.discardActiveObject();
                 canvas.isDrawingMode = false;
             } else {
-                lockOverlay.style.display = 'none';
-                if (toolSelect.value === 'draw') canvas.isDrawingMode = true;
+                if(overlay) overlay.style.display = 'none';
+                if (getEl('tool')?.value === 'draw') canvas.isDrawingMode = true;
             }
         }
     });
 
-    // 提出機能
-    submitBtn.addEventListener('click', () => {
+    window.submitWork = function() {
         const dataURL = canvas.toDataURL({ format: 'png', quality: 0.8 });
         socket.emit('submit-work', { author: `${myName} (P.${currentPage})`, image: dataURL, time: new Date().toLocaleTimeString() });
-        const originalText = submitBtn.textContent;
-        submitBtn.textContent = '✅ 提出しました！';
-        submitBtn.style.backgroundColor = '#28a745';
-        setTimeout(() => {
-            submitBtn.textContent = originalText;
-            submitBtn.style.backgroundColor = '#ff9800';
-        }, 2000);
-    });
+        const btn = getEl('submitBtn');
+        if(btn) {
+            const originalText = btn.textContent;
+            btn.textContent = '✅ 提出しました！';
+            btn.style.backgroundColor = '#28a745';
+            setTimeout(() => { btn.textContent = originalText; btn.style.backgroundColor = '#ff9800'; }, 2000);
+        }
+    };
 
     socket.on('receive-submission', (data) => {
         if (!isTeacher) return;
-        let existingImg = document.getElementById('sub-img-' + data.author);
+        const grid = getEl('gallery-grid');
+        if(!grid) return;
+        let existingImg = getEl('sub-img-' + data.author);
         if (existingImg) {
             existingImg.src = data.image;
-            document.getElementById('sub-time-' + data.author).textContent = '更新: ' + data.time;
+            getEl('sub-time-' + data.author).textContent = '更新: ' + data.time;
         } else {
             const div = document.createElement('div');
             div.className = 'gallery-item';
-            div.innerHTML = `
-                <h3 style="margin:0 0 10px 0; color:#333;">👦 ${data.author}</h3>
-                <img id="sub-img-${data.author}" src="${data.image}" alt="提出物">
-                <p id="sub-time-${data.author}" style="color:#666; font-size:14px; margin:5px 0 0 0;">提出: ${data.time}</p>
-            `;
-            galleryGrid.appendChild(div);
+            div.innerHTML = `<h3 style="margin:0 0 10px 0; color:#333;">👦 ${data.author}</h3><img id="sub-img-${data.author}" src="${data.image}" alt="提出物"><p id="sub-time-${data.author}" style="color:#666; font-size:14px; margin:5px 0 0 0;">提出: ${data.time}</p>`;
+            grid.appendChild(div);
         }
     });
 
-    viewGalleryBtn.addEventListener('click', () => galleryModal.style.display = 'block');
-    closeGalleryBtn.addEventListener('click', () => galleryModal.style.display = 'none');
-
-    // タイマー機能
-    function updateTimerDisplay() {
-        const m = Math.floor(currentSeconds / 60).toString().padStart(2, '0');
-        const s = (currentSeconds % 60).toString().padStart(2, '0');
-        timerDisplay.textContent = `${m}:${s}`;
-        if (currentSeconds <= 10 && currentSeconds > 0) {
-            timerDisplay.style.color = '#ff4444';
-        } else {
-            timerDisplay.style.color = 'white';
-        }
-    }
-
-    if (isTeacher) {
-        timerPlusBtn.addEventListener('click', () => {
-            currentSeconds += 60;
-            updateTimerDisplay();
-            socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
-        });
-        
-        timerMinusBtn.addEventListener('click', () => {
-            if (currentSeconds >= 60) currentSeconds -= 60;
-            updateTimerDisplay();
-            socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
-        });
-
-        timerStartBtn.addEventListener('click', () => {
-            socket.emit('sync-timer', { action: 'start' });
-            startTimer();
-        });
-
-        timerStopBtn.addEventListener('click', () => {
-            socket.emit('sync-timer', { action: 'stop' });
-            stopTimer();
-        });
-    }
-
-    function startTimer() {
-        clearInterval(timerInterval);
-        timerInterval = setInterval(() => {
-            if (currentSeconds > 0) {
-                currentSeconds--;
-                updateTimerDisplay();
-                if (isTeacher) {
-                    socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
-                }
-            } else {
-                stopTimer();
-                // 先生モードの時だけアラートを出す（生徒が一斉にアラートで止まらないようにするため）
-                if (isTeacher) alert('時間です！'); 
-            }
-        }, 1000);
-    }
-
-    function stopTimer() {
-        clearInterval(timerInterval);
-    }
-
-    socket.on('sync-timer', (data) => {
-        if (data.action === 'update') {
-            currentSeconds = data.seconds;
-            updateTimerDisplay();
-        } else if (data.action === 'start') {
-            startTimer();
-        } else if (data.action === 'stop') {
-            stopTimer();
-        }
-    });
+    window.exportPDF = function() {
+        if (typeof window.jspdf === 'undefined') return alert('PDF作成プログラムが読み込まれていません。画面を更新してください。');
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
+        const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
+    };
 }
+
+// タイマー機能の共通関数
+function updateTimerDisplay() {
+    const disp = getEl('timer-display');
+    if(!disp) return;
+    const m = Math.floor(currentSeconds / 60).toString().padStart(2, '0');
+    const s = (currentSeconds % 60).toString().padStart(2, '0');
+    disp.textContent = `${m}:${s}`;
+    disp.style.color = (currentSeconds <= 10 && currentSeconds > 0) ? '#ff4444' : 'white';
+}
+
+function updateTimerAmount(amount) {
+    currentSeconds += amount;
+    if (currentSeconds < 0) currentSeconds = 0;
+    updateTimerDisplay();
+    socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
+}
+
+function startTimer() {
+    clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+        if (currentSeconds > 0) {
+            currentSeconds--;
+            updateTimerDisplay();
+            if (isTeacher) socket.emit('sync-timer', { action: 'update', seconds: currentSeconds });
+        } else {
+            stopTimer();
+            if (isTeacher) alert('時間です！'); 
+        }
+    }, 1000);
+}
+
+function stopTimer() {
+    clearInterval(timerInterval);
+}
+
+socket.on('sync-timer', (data) => {
+    if (data.action === 'update') { currentSeconds = data.seconds; updateTimerDisplay(); } 
+    else if (data.action === 'start') { startTimer(); } 
+    else if (data.action === 'stop') { stopTimer(); }
+});
