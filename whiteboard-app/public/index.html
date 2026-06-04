@@ -2,73 +2,89 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>グループワーク ボード</title>
+    <title>グループワーク ボード（高機能版）</title>
     <style>
         body { font-family: sans-serif; margin: 0; padding: 10px; background-color: #f4f4f9; text-align: center; }
+        
         #login-screen { margin-top: 100px; }
         .input-group { margin-bottom: 15px; }
-        .input-group input { padding: 10px; font-size: 18px; border-radius: 5px; border: 1px solid #ccc; width: 250px; }
+        .input-group input[type="text"] { padding: 10px; font-size: 18px; border-radius: 5px; border: 1px solid #ccc; width: 250px; }
         #joinBtn { padding: 10px 20px; font-size: 18px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; }
         
+        /* 先生モードのチェックボックス用 */
+        .teacher-check { margin: 15px 0; font-size: 18px; font-weight: bold; color: #d32f2f; }
+
         #whiteboard-screen { display: none; }
-        .toolbar { display: flex; gap: 8px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
-        button, select { padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 15px; font-weight: bold; }
+        .toolbar { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
+        button, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold; }
         
         .primary-btn { background-color: #007bff; color: white; border: none; }
         .danger-btn { background-color: #dc3545; color: white; border: none; }
-        .page-btn { background-color: #ffc107; color: #333; border: none; }
-        .export-btn { background-color: #17a2b8; color: white; border: none; }
+        .submit-btn { background-color: #ff9800; color: white; border: none; }
+        .teacher-only { display: none; } /* 先生にしか見えない要素 */
+
+        .canvas-container { margin: 0 auto !important; border: 2px solid #ccc; background-color: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; }
         
-        .canvas-container { margin: 0 auto !important; border: 2px solid #ccc; background-color: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .divider { border-left: 2px solid #ccc; height: 30px; margin: 0 5px; }
+        /* 注目ロック時のオーバーレイ */
+        #lock-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; border-radius: 8px; color: white; font-size: 32px; font-weight: bold; align-items: center; justify-content: center; }
+
+        /* 提出物ギャラリー（オクリンク風） */
+        #gallery-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1000; overflow-y: auto; padding: 20px; box-sizing: border-box; }
+        #gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
+        .gallery-item { background: white; padding: 10px; border-radius: 8px; }
+        .gallery-item img { width: 100%; border: 1px solid #ccc; border-radius: 4px; }
     </style>
 </head>
 <body>
 
     <div id="login-screen">
-        <h2>グループの ボードへ ようこそ！</h2>
+        <h2>グループワーク ボードへ ようこそ！</h2>
         <div class="input-group">
             <input type="text" id="username" placeholder="あなたの なまえ" required>
         </div>
         <div class="input-group">
             <input type="text" id="roomName" placeholder="グループの あいことば" required>
         </div>
+        <div class="teacher-check">
+            <label><input type="checkbox" id="isTeacherMode"> 先生モードで入る</label>
+        </div>
         <button id="joinBtn">ボードに入る</button>
     </div>
 
     <div id="whiteboard-screen">
         <div class="toolbar">
-            <button id="prevPageBtn" class="page-btn">◀ 前</button>
-            <span id="pageDisplay" style="font-weight:bold; font-size:16px;">1ページ目</span>
-            <button id="nextPageBtn" class="page-btn">次 ▶</button>
+            <span id="display-info" style="line-height: 35px; font-weight: bold; margin-right: 10px;"></span>
             
-            <span class="divider"></span>
-
             <select id="tool">
-                <option value="draw">✎ ペンでかく</option>
-                <option value="text">A もじをいれる</option>
-                <option value="sticky">📝 ふせんをはる</option>
-                <option value="select">👆 えらぶ・うごかす</option>
+                <option value="draw">ペンでかく</option>
+                <option value="text">もじをいれる</option>
+                <option value="select">えらぶ・うごかす</option>
             </select>
             <input type="color" id="colorPicker" value="#000000">
+            <button id="deleteObjBtn" class="danger-btn">えらんだものをけす</button>
             
-            <button id="deleteObjBtn" class="danger-btn">えらんで けす</button>
-            
-            <span class="divider"></span>
-            
-            <button id="uploadBtn" class="primary-btn">📷 しゃしん</button>
-            <button id="exportCsvBtn" class="export-btn">📊 エクセル</button>
-            <button id="exportPdfBtn" class="export-btn">📄 PDF保存</button>
-            <input type="file" id="imageUpload" accept="image/*" style="display:none;">
-            
-            <span class="divider"></span>
-            <button id="clearBtn" class="danger-btn">ぜんぶけす</button>
+            <button id="submitBtn" class="submit-btn" style="display:none;">先生に提出する！</button>
+
+            <button id="lockBoardBtn" class="teacher-only danger-btn">注目！(操作ロック)</button>
+            <button id="viewGalleryBtn" class="teacher-only primary-btn">みんなの提出を見る</button>
+            <button id="clearBtn" class="teacher-only danger-btn" style="background-color: #6c757d;">ぜんぶけす</button>
+            <button id="exportBtn" class="teacher-only" style="background-color: #17a2b8; color: white; border: none;">CSVエクスポート</button>
         </div>
 
-        <canvas id="canvas" width="1000" height="600"></canvas>
+        <div style="position: relative; width: 1000px; margin: 0 auto;">
+            <canvas id="canvas" width="1000" height="600"></canvas>
+            <div id="lock-overlay">先生のお話を聞きましょう（ロック中）</div>
+        </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <div id="gallery-modal">
+        <div style="display: flex; justify-content: space-between; align-items: center; color: white; margin-bottom: 20px;">
+            <h2>みんなの提出ボード（一覧）</h2>
+            <button id="closeGalleryBtn" style="font-size: 20px; padding: 10px 20px;">閉じる</button>
+        </div>
+        <div id="gallery-grid"></div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>

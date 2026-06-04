@@ -7,25 +7,16 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static('public'));
-
-// 部屋(ページ)ごとのデータを記憶するノート
 const roomHistory = {};
 
 io.on('connection', (socket) => {
+    console.log('ユーザーが接続:', socket.id);
+
     socket.on('join-room', (roomName) => {
-        // もし別のページにいた場合は、古いページから退出する
-        if (socket.roomName) {
-            socket.leave(socket.roomName);
-        }
-        
         socket.join(roomName);
         socket.roomName = roomName;
-        
-        // そのページの過去データがあれば送信、なければ真っ白にする
         if (roomHistory[roomName]) {
             socket.emit('canvas-data', roomHistory[roomName]);
-        } else {
-            socket.emit('clear-canvas');
         }
     });
 
@@ -41,6 +32,25 @@ io.on('connection', (socket) => {
             roomHistory[socket.roomName] = null;
             socket.to(socket.roomName).emit('clear-canvas');
         }
+    });
+
+    // 🌟 新機能：先生がロックをかけたときの通信
+    socket.on('lock-board', (isLocked) => {
+        if (socket.roomName) {
+            socket.to(socket.roomName).emit('lock-board', isLocked);
+        }
+    });
+
+    // 🌟 新機能：生徒が提出ボタンを押したときの通信
+    socket.on('submit-work', (data) => {
+        if (socket.roomName) {
+            // 提出された画像を、同じ部屋の先生（全員）に転送
+            socket.to(socket.roomName).emit('receive-submission', data);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        console.log('切断:', socket.id);
     });
 });
 
