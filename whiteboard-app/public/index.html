@@ -3,42 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <title>グループワーク ボード</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
         body { font-family: sans-serif; margin: 0; padding: 10px; background-color: #f4f4f9; text-align: center; }
-        
         #login-screen { margin-top: 100px; }
         .input-group { margin-bottom: 15px; }
         .input-group input[type="text"] { padding: 10px; font-size: 18px; border-radius: 5px; border: 1px solid #ccc; width: 250px; }
-        #joinBtn { padding: 10px 20px; font-size: 18px; background-color: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-base { padding: 8px 12px; font-size: 14px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; color: white; margin: 2px; }
+        #joinBtn { padding: 10px 20px; font-size: 18px; background-color: #28a745; margin-top:10px; }
         .teacher-check { margin: 15px 0; font-size: 18px; font-weight: bold; color: #d32f2f; }
 
         #whiteboard-screen { display: none; }
-        .toolbar { display: flex; gap: 8px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
-        button, select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 15px; font-weight: bold; }
+        .toolbar { display: flex; gap: 4px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
+        select, input[type="color"] { padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; cursor: pointer; margin: 2px; }
         
-        .primary-btn { background-color: #007bff; color: white; border: none; }
-        .danger-btn { background-color: #dc3545; color: white; border: none; }
-        .submit-btn { background-color: #ff9800; color: white; border: none; }
-        .gaku-btn { background-color: #1e88e5; color: white; border: none; }
-        .ma-btn { background-color: #dc3545; color: white; border: none; }
-        .sticky-btn { background-color: #ffca28; color: #333; border: none; }
-        .pdf-btn { background-color: #9c27b0; color: white; border: none; }
+        .btn-blue { background-color: #007bff; }
+        .btn-red { background-color: #dc3545; }
+        .btn-yellow { background-color: #ffca28; color: #333; }
+        .btn-purple { background-color: #9c27b0; }
+        .btn-gray { background-color: #6c757d; }
+        .btn-green { background-color: #28a745; }
 
         .teacher-only { display: none; }
-
-        .page-btn { background-color: #e0e0e0; color: #333; border: 1px solid #ccc; margin: 0 2px; padding: 6px 12px; font-size: 14px; border-radius: 4px; }
+        
+        /* ページボタンが35個並んでも大丈夫なようにスクロール式にしました */
+        #page-list-container { display: inline-flex; max-width: 300px; overflow-x: auto; white-space: nowrap; padding-bottom: 4px; align-items: center; }
+        #page-list-container::-webkit-scrollbar { height: 6px; }
+        #page-list-container::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        .page-btn { background-color: #e0e0e0; color: #333; border: 1px solid #ccc; padding: 4px 10px; font-size: 14px; border-radius: 4px; cursor: pointer; margin: 0 2px; }
         .page-btn.active { background-color: #007bff; color: white; border-color: #007bff; }
-        .add-page-btn { background-color: #28a745; color: white; border: none; padding: 6px 12px; font-size: 14px; border-radius: 4px; }
 
-        #canvas-wrapper { width: 100%; height: 75vh; overflow: auto; border: 2px solid #ccc; background-color: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); position: relative; }
+        #canvas-wrapper { width: 100%; height: 75vh; overflow: auto; border: 2px solid #ccc; background-color: white; border-radius: 8px; position: relative; }
         #lock-overlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 1000; color: white; font-size: 40px; font-weight: bold; align-items: center; justify-content: center; }
-
-        #gallery-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 1000; overflow-y: auto; padding: 20px; box-sizing: border-box; }
-        #gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
-        .gallery-item { background: white; padding: 10px; border-radius: 8px; }
-        .gallery-item img { width: 100%; border: 1px solid #ccc; border-radius: 4px; }
+        
+        /* 先生のモニタリングギャラリー */
+        #gallery-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 1000; overflow-y: auto; padding: 20px; box-sizing: border-box; text-align: left; }
+        .gallery-item { background: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: inline-block; width: 350px; margin-right: 20px; vertical-align: top;}
+        .gallery-item h3 { margin: 0 0 10px 0; font-size: 18px; color: #333; text-align: center; }
+        .gallery-item img { width: 100%; border: 1px solid #ccc; border-radius: 4px; background-color: white; }
     </style>
 </head>
 <body>
@@ -54,27 +59,32 @@
         <div class="teacher-check">
             <label><input type="checkbox" id="isTeacherMode"> 先生モードで入る</label>
         </div>
-        <button id="joinBtn">ボードに入る</button>
+        <button id="joinBtn" class="btn-base" onclick="joinRoom()">ボードに入る</button>
     </div>
 
     <div id="whiteboard-screen">
         <div class="toolbar">
-            <select id="tool">
+            <select id="textDirection">
+                <option value="h">➡ 横書きモード</option>
+                <option value="v">⬇ 縦書きモード</option>
+            </select>
+
+            <select id="tool" onchange="changeTool()">
                 <option value="select">👆 えらぶ・うごかす</option>
                 <option value="draw">✎ ペンでかく</option>
                 <option value="text">A もじをいれる</option>
                 <option value="pointer">🔴 ポインター</option>
             </select>
-            <input type="color" id="colorPicker" value="#000000">
+            <input type="color" id="colorPicker" value="#000000" onchange="changeColor()">
             
             <span style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
-
-            <span style="font-weight: bold; font-size: 15px; color: #333;">ページ:</span>
-            <span id="page-list"></span>
-            <button id="addPageBtn" class="add-page-btn">＋追加</button>
+            
+            <span style="font-weight: bold; font-size: 14px; color: #333;">ページ:</span>
+            <div id="page-list-container"><span id="page-list"></span></div>
+            <button class="teacher-only btn-base btn-green" onclick="createMassPages()">👥 35人分ページ作成</button>
+            <button class="btn-base btn-green" style="background-color: #20c997;" onclick="addPage()">＋1枚追加</button>
 
             <span style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
-
             <select id="stickyColor">
                 <option value="#fff9c4">きいろ</option>
                 <option value="#ffcc80">オレンジ</option>
@@ -82,17 +92,17 @@
                 <option value="#c8e6c9">みどり</option>
                 <option value="#bbdefb">あお</option>
             </select>
-            <button id="addStickyBtn" class="sticky-btn">📝 ふせんをはる</button>
-            <button id="deleteObjBtn" class="danger-btn">えらんで けす</button>
-            <button id="submitBtn" class="submit-btn" style="display:none;">先生に提出する！</button>
+            <button class="btn-base btn-yellow" onclick="addSticky()">📝 ふせん</button>
+            <button class="btn-base btn-red" onclick="deleteSelected()">えらんで けす</button>
 
             <span class="teacher-only" style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
-            <button id="addGakuBtn" class="teacher-only gaku-btn">〇学 枠</button>
-            <button id="addMaBtn" class="teacher-only ma-btn">〇ま 枠</button>
-            <button id="lockBoardBtn" class="teacher-only danger-btn">注目！</button>
-            <button id="viewGalleryBtn" class="teacher-only primary-btn">みんなの提出</button>
-            <button id="exportPdfBtn" class="teacher-only pdf-btn">PDFで保存</button>
-            <button id="clearBtn" class="teacher-only danger-btn" style="background-color: #6c757d;">全消去</button>
+            <button class="teacher-only btn-base btn-blue" onclick="createBoardFrame('学')">〇学 枠</button>
+            <button class="teacher-only btn-base btn-red" onclick="createBoardFrame('ま')">〇ま 枠</button>
+            
+            <button id="lockBoardBtn" class="teacher-only btn-base btn-red" onclick="toggleLock()">注目！</button>
+            <button class="teacher-only btn-base btn-blue" onclick="openGallery()">👀 全員の進捗を見る</button>
+            <button class="teacher-only btn-base btn-purple" onclick="exportPDF()">PDF保存</button>
+            <button class="teacher-only btn-base btn-gray" onclick="clearAll()">全消去</button>
         </div>
 
         <div id="canvas-wrapper">
@@ -103,15 +113,500 @@
 
     <div id="gallery-modal">
         <div style="display: flex; justify-content: space-between; align-items: center; color: white; margin-bottom: 20px;">
-            <h2>みんなの提出ボード（一覧）</h2>
-            <button id="closeGalleryBtn" style="font-size: 20px; padding: 10px 20px;">閉じる</button>
+            <h2>👀 クラス全員の進捗モニタリング（自動更新ではありません。最新を見る時は開き直してください）</h2>
+            <button class="btn-base btn-gray" style="font-size:20px; padding:10px 20px;" onclick="document.getElementById('gallery-modal').style.display='none'">閉じる</button>
         </div>
-        <div id="gallery-grid"></div>
+        <div id="gallery-grid" style="text-align: center;">
+            <p style="color:white; font-size:20px;">読み込み中...</p>
+        </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js"></script>
+    <script>
+        const socket = io();
+        let canvas;
+        let isReceiving = false;
+        let myName = '';
+        let myRoom = '';
+        let isTeacher = false;
+        let isLocked = false;
+        let remotePointers = {};
+        let currentPage = 1;
+        let maxPage = 1;
 
+        // 🌟通信に必要な特別な属性を登録
+        const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'offsetX', 'offsetY'];
+
+        function joinRoom() {
+            myName = document.getElementById('username').value.trim() || 'ななし';
+            myRoom = document.getElementById('roomName').value.trim() || 'room1';
+            isTeacher = document.getElementById('isTeacherMode').checked;
+
+            if (!document.getElementById('username').value.trim() || !document.getElementById('roomName').value.trim()) {
+                return alert('なまえ と あいことば をいれてね！');
+            }
+
+            socket.emit('join-room', myRoom);
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('whiteboard-screen').style.display = 'block';
+            
+            if (isTeacher) {
+                document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
+            } else {
+                document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'none');
+            }
+
+            renderPageButtons();
+            initCanvas();
+        }
+
+        function renderPageButtons() {
+            const container = document.getElementById('page-list');
+            container.innerHTML = '';
+            for (let i = 1; i <= maxPage; i++) {
+                const btn = document.createElement('button');
+                btn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
+                btn.textContent = i;
+                btn.onclick = () => { if (i !== currentPage) switchPage(i); };
+                container.appendChild(btn);
+            }
+        }
+
+        function switchPage(pageNumber) {
+            currentPage = pageNumber;
+            renderPageButtons();
+            if(canvas) canvas.clear();
+            socket.emit('switch-page', pageNumber);
+        }
+
+        function addPage() {
+            maxPage++;
+            socket.emit('set-max-page', maxPage);
+            switchPage(maxPage);
+        }
+
+        // 🌟新機能④：35人分のページを一気に作る
+        function createMassPages() {
+            const num = prompt("児童の人数（作成するページ数）を入力してください\n※例: 35", "35");
+            if (num && !isNaN(num)) {
+                const parsed = parseInt(num, 10);
+                if (parsed > 0) {
+                    socket.emit('set-max-page', parsed);
+                }
+            }
+        }
+
+        socket.on('max-page-updated', (max) => {
+            if (max > maxPage) {
+                maxPage = max;
+                renderPageButtons();
+            }
+        });
+
+        function setPermissions(obj) {
+            if (isTeacher) {
+                obj.set({ selectable: true, evented: true });
+            } else {
+                const isMine = (obj.author === myName);
+                obj.set({ selectable: isMine, evented: isMine });
+            }
+        }
+
+        function changeTool() {
+            if(!canvas) return;
+            const tool = document.getElementById('tool').value;
+            if (isLocked && !isTeacher) {
+                canvas.isDrawingMode = false;
+                return;
+            }
+            canvas.isDrawingMode = (tool === 'draw');
+        }
+
+        function changeColor() {
+            if(!canvas) return;
+            canvas.freeDrawingBrush.color = document.getElementById('colorPicker').value;
+        }
+
+        // 🌟新機能③：枠と文字を連携させる魔法の関数
+        function setupLink(frame, text) {
+            frame.off('moving'); text.off('moving');
+            frame.on('moving', () => {
+                text.set({ left: frame.left + frame.offsetX, top: frame.top + frame.offsetY });
+                text.setCoords();
+            });
+            text.on('moving', () => {
+                frame.set({ left: text.left + text.offsetX, top: text.top + text.offsetY });
+                frame.setCoords();
+            });
+        }
+
+        function getScrollOffset() {
+            const wrapper = document.getElementById('canvas-wrapper'); 
+            if (!wrapper) return { x: 100, y: 100 };
+            return { x: wrapper.scrollLeft + 100, y: wrapper.scrollTop + 100 };
+        }
+
+        // 🌟新機能②：縦横対応の枠＆文字ペアリング
+        function createBoardFrame(type) {
+            if (!canvas) return;
+            const isVertical = (document.getElementById('textDirection').value === 'v');
+            const isGaku = (type === '学');
+            const color = isGaku ? '#1e88e5' : '#dc3545';
+            const offset = getScrollOffset();
+
+            // 縦横で枠の形を変える
+            const rw = isVertical ? 120 : 450;
+            const rh = isVertical ? 450 : 120;
+            const bx = isVertical ? rw - 20 : -20;
+            const by = -20;
+
+            const circle = new fabric.Circle({ radius: 20, fill: 'white', stroke: color, strokeWidth: 4, originX: 'center', originY: 'center' });
+            const textBadge = new fabric.Text(type, { fontSize: 24, fill: color, fontWeight: 'bold', originX: 'center', originY: 'center' });
+            const badge = new fabric.Group([circle, textBadge], { left: bx, top: by });
+            const rect = new fabric.Rect({ left: 0, top: 0, width: rw, height: rh, fill: 'transparent', stroke: color, strokeWidth: 4, rx: 8, ry: 8 });
+
+            const frameGroup = new fabric.Group([rect, badge], { left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
+
+            // 縦横で文字の位置と形を変える
+            const tx = offset.x + (isVertical ? 45 : 40);
+            const ty = offset.y + (isVertical ? 40 : 30);
+            const placeholder = isGaku ? 'めあてを\n入力...' : 'まとめを\n入力...';
+            
+            let innerText;
+            if (isVertical) {
+                // 縦書きマジック：幅を極端に狭くして1文字ずつ折り返させる
+                innerText = new fabric.Textbox(placeholder, { left: tx, top: ty, fontSize: 24, fill: '#333', author: myName, width: 30, splitByGrapheme: true });
+            } else {
+                innerText = new fabric.IText(placeholder.replace('\n',''), { left: tx, top: ty, fontSize: 24, fill: '#333', author: myName });
+            }
+
+            // ペアリング情報の登録
+            const linkedId = Date.now().toString();
+            frameGroup.set({ linkedId: linkedId, linkRole: 'frame', offsetX: tx - offset.x, offsetY: ty - offset.y });
+            innerText.set({ linkedId: linkedId, linkRole: 'text', offsetX: offset.x - tx, offsetY: offset.y - ty });
+
+            setPermissions(frameGroup);
+            setPermissions(innerText);
+            
+            setupLink(frameGroup, innerText); // ペアリング発動！
+            
+            canvas.add(frameGroup, innerText);
+            document.getElementById('tool').value = 'select';
+            canvas.isDrawingMode = false;
+            emitCanvasData();
+        }
+
+        // 🌟新機能①：縦横対応のふせん
+        function addSticky() {
+            if (!canvas) return;
+            const isVertical = (document.getElementById('textDirection').value === 'v');
+            const selectedColor = document.getElementById('stickyColor').value;
+            const offset = getScrollOffset();
+
+            let stickyText;
+            const commonOpts = { left: offset.x + 50, top: offset.y + 50, fontSize: 22, padding: 15, backgroundColor: selectedColor, fill: '#333', author: myName, timestamp: new Date().toLocaleString(), shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 }) };
+            
+            if (isVertical) {
+                commonOpts.width = 30;
+                commonOpts.splitByGrapheme = true;
+                stickyText = new fabric.Textbox('ここに入力', commonOpts);
+            } else {
+                stickyText = new fabric.IText('ここに入力', commonOpts);
+            }
+
+            setPermissions(stickyText);
+            canvas.add(stickyText);
+            canvas.setActiveObject(stickyText);
+            stickyText.enterEditing();
+            stickyText.selectAll();
+            
+            document.getElementById('tool').value = 'select';
+            canvas.isDrawingMode = false;
+            emitCanvasData();
+        }
+
+        function deleteSelected() {
+            if (!canvas) return;
+            const activeObjects = canvas.getActiveObjects();
+            if (activeObjects.length === 0) {
+                alert('消したいものを「👆えらぶ・うごかす」ツールでクリックして選んでから、けすボタンを押してね！');
+                return;
+            }
+            
+            let deletedSomething = false;
+            let notYours = false;
+
+            // ペアの片方を消したら、もう片方も一緒に消すための準備
+            const idsToDelete = activeObjects.map(o => o.linkedId).filter(id => id);
+
+            canvas.getObjects().forEach(obj => {
+                const isSelected = activeObjects.includes(obj);
+                const isLinked = idsToDelete.includes(obj.linkedId);
+                if (isSelected || isLinked) {
+                    if (isTeacher || obj.author === myName) {
+                        canvas.remove(obj);
+                        deletedSomething = true;
+                    } else if (isSelected) {
+                        notYours = true;
+                    }
+                }
+            });
+
+            if (deletedSomething) {
+                canvas.discardActiveObject();
+                emitCanvasData();
+            }
+            if (notYours) {
+                alert('ほかの人がかいたものは、けせません！');
+            }
+        }
+
+        function clearAll() {
+            if (!canvas) return;
+            if (confirm(`ほんとうに ページ ${currentPage} のデータを ぜんぶ けしますか？`)) {
+                canvas.clear();
+                canvas.backgroundColor = '#ffffff'; 
+                socket.emit('clear-canvas'); 
+                emitCanvasData(); 
+            }
+        }
+
+        function toggleLock() {
+            isLocked = !isLocked;
+            socket.emit('lock-board', isLocked);
+            const btn = document.getElementById('lockBoardBtn');
+            btn.textContent = isLocked ? 'ロック解除' : '注目！';
+            btn.style.backgroundColor = isLocked ? '#28a745' : '#dc3545';
+        }
+
+        function exportPDF() {
+            if (!canvas) return;
+            if (typeof window.jspdf === 'undefined') return alert('PDF作成プログラムが読み込まれていません。');
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
+            
+            canvas.backgroundColor = '#ffffff';
+            canvas.renderAll();
+            
+            const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            
+            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
+        }
+
+        function emitCanvasData() {
+            if (isReceiving || !canvas) return;
+            const objectsToSave = canvas.getObjects().filter(obj => obj.author);
+            // カスタムプロパティを確実に保存
+            const json = { objects: objectsToSave.map(obj => obj.toObject(customProps)) };
+            socket.emit('canvas-data', { page: currentPage, canvas: json });
+        }
+
+        function initCanvas() {
+            canvas = new fabric.Canvas('canvas', { 
+                isDrawingMode: false,
+                backgroundColor: '#ffffff'
+            });
+            document.getElementById('tool').value = 'select';
+
+            canvas.on('mouse:move', (options) => {
+                const tool = document.getElementById('tool').value;
+                if (tool === 'pointer') {
+                    const pointer = canvas.getPointer(options.e);
+                    socket.emit('pointer-move', { author: myName, page: currentPage, x: pointer.x, y: pointer.y });
+                }
+            });
+
+            canvas.on('mouse:down', (options) => {
+                const tool = document.getElementById('tool').value;
+                if (tool === 'text' && !canvas.isDrawingMode) {
+                    const isVertical = (document.getElementById('textDirection').value === 'v');
+                    const pointer = canvas.getPointer(options.e);
+                    const color = document.getElementById('colorPicker').value;
+                    const opts = { left: pointer.x, top: pointer.y, fill: color, fontSize: 24, author: myName, timestamp: new Date().toLocaleString() };
+                    
+                    let textObj;
+                    if (isVertical) {
+                        opts.splitByGrapheme = true;
+                        opts.width = 30;
+                        textObj = new fabric.Textbox('ここに入力', opts);
+                    } else {
+                        textObj = new fabric.IText('ここに入力', opts);
+                    }
+
+                    setPermissions(textObj);
+                    canvas.add(textObj);
+                    canvas.setActiveObject(textObj);
+                    textObj.enterEditing();
+                    textObj.selectAll();
+                    emitCanvasData();
+                    
+                    document.getElementById('tool').value = 'select'; 
+                    canvas.isDrawingMode = false;
+                }
+            });
+
+            canvas.on('path:created', (options) => {
+                options.path.set({ author: myName, timestamp: new Date().toLocaleString() });
+                setPermissions(options.path);
+                emitCanvasData();
+            });
+
+            canvas.on('object:modified', () => emitCanvasData());
+
+            window.addEventListener('paste', (e) => {
+                if (isLocked && !isTeacher) return;
+                const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+                for (let index in items) {
+                    const item = items[index];
+                    if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {
+                        const blob = item.getAsFile();
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            const imgObj = new Image();
+                            imgObj.src = event.target.result;
+                            imgObj.onload = () => {
+                                const image = new fabric.Image(imgObj);
+                                const offset = getScrollOffset(); 
+                                image.set({ left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
+                                if (image.width > 600) image.scaleToWidth(600);
+                                setPermissions(image);
+                                canvas.add(image);
+                                canvas.setActiveObject(image);
+                                document.getElementById('tool').value = 'select';
+                                canvas.isDrawingMode = false;
+                                emitCanvasData();
+                            }
+                        };
+                        reader.readAsDataURL(blob);
+                    }
+                }
+            });
+        }
+
+        // --- 🌟 モニタリング機能（Req 5） ---
+        function openGallery() {
+            document.getElementById('gallery-modal').style.display = 'block';
+            document.getElementById('gallery-grid').innerHTML = '<p style="color:white; font-size:20px;">全ページのデータを取得中...</p>';
+            socket.emit('request-all-pages');
+        }
+
+        // 高速で裏側に描画するための見えないキャンバス
+        const offscreenCanvas = document.createElement('canvas');
+        const offscreen = new fabric.StaticCanvas(offscreenCanvas, { width: 2000, height: 1500, backgroundColor: '#ffffff' });
+
+        socket.on('all-pages-data', (pagesData) => {
+            const grid = document.getElementById('gallery-grid');
+            grid.innerHTML = '';
+            
+            const pageNumbers = Object.keys(pagesData).sort((a,b) => parseInt(a) - parseInt(b));
+            if (pageNumbers.length === 0) {
+                grid.innerHTML = '<p style="color:white; font-size:20px;">まだデータがありません</p>';
+                return;
+            }
+
+            // 1ページずつ順番に画像化して表示する（フリーズ防止）
+            let i = 0;
+            function renderNextThumb() {
+                if (i >= pageNumbers.length) return;
+                const pNum = pageNumbers[i];
+                const rawData = pagesData[pNum];
+                
+                if (!rawData || Object.keys(rawData).length === 0) {
+                    grid.innerHTML += `<div class="gallery-item"><h3>📄 ページ ${pNum}</h3><p style="text-align:center;">（白紙です）</p></div>`;
+                    i++;
+                    renderNextThumb();
+                    return;
+                }
+
+                offscreen.loadFromJSON(rawData, () => {
+                    offscreen.backgroundColor = '#ffffff';
+                    offscreen.renderAll();
+                    const imgUrl = offscreen.toDataURL({ format: 'jpeg', quality: 0.5 });
+                    grid.innerHTML += `<div class="gallery-item"><h3>📄 ページ ${pNum}</h3><img src="${imgUrl}"></div>`;
+                    i++;
+                    renderNextThumb();
+                });
+            }
+            renderNextThumb();
+        });
+
+
+        // --- 通信処理 ---
+        socket.on('canvas-data', (data) => {
+            const targetPage = data.page || 1;
+            if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
+            if (targetPage !== currentPage) return; 
+
+            isReceiving = true;
+            const canvasRaw = data.canvas || data;
+            
+            if (!canvasRaw || Object.keys(canvasRaw).length === 0) {
+                 if(canvas) { canvas.clear(); canvas.backgroundColor = '#ffffff'; }
+                 isReceiving = false;
+                 return;
+            }
+
+            if(canvas) {
+                canvas.loadFromJSON(canvasRaw, () => {
+                    canvas.backgroundColor = '#ffffff'; 
+                    
+                    // 🌟 ペアリングを復元する魔法
+                    const linkedMap = {};
+                    canvas.getObjects().forEach(obj => {
+                        if (obj.linkedId) {
+                            if (!linkedMap[obj.linkedId]) linkedMap[obj.linkedId] = {};
+                            linkedMap[obj.linkedId][obj.linkRole] = obj;
+                        }
+                    });
+                    Object.values(linkedMap).forEach(pair => {
+                        if (pair.frame && pair.text) setupLink(pair.frame, pair.text);
+                    });
+
+                    canvas.renderAll();
+                    isReceiving = false;
+                }, (o, object) => {
+                    customProps.forEach(prop => { if(o[prop] !== undefined) object.set(prop, o[prop]); });
+                    setPermissions(object);
+                });
+            }
+        });
+
+        socket.on('pointer-move', (data) => {
+            if(!canvas || data.page !== currentPage) return;
+            if (!remotePointers[data.author]) {
+                const circle = new fabric.Circle({ radius: 8, fill: 'red', originX: 'center', originY: 'center' });
+                const nameText = new fabric.Text(data.author, { fontSize: 16, fill: 'red', top: 15, originX: 'center', fontWeight: 'bold' });
+                const pointerGroup = new fabric.Group([circle, nameText], { selectable: false, evented: false });
+                canvas.add(pointerGroup);
+                remotePointers[data.author] = { group: pointerGroup, timeout: null };
+            }
+            const p = remotePointers[data.author];
+            p.group.set({ left: data.x, top: data.y });
+            canvas.renderAll();
+
+            clearTimeout(p.timeout);
+            p.timeout = setTimeout(() => { canvas.remove(p.group); delete remotePointers[data.author]; canvas.renderAll(); }, 2000);
+        });
+
+        socket.on('clear-canvas-local', () => { 
+            if(canvas) { canvas.clear(); canvas.backgroundColor = '#ffffff'; canvas.renderAll(); }
+        });
+
+        socket.on('lock-board', (lockedState) => {
+            if (!isTeacher) {
+                isLocked = lockedState;
+                const overlay = document.getElementById('lock-overlay');
+                if (isLocked) {
+                    overlay.style.display = 'flex';
+                    if(canvas) { canvas.discardActiveObject(); canvas.isDrawingMode = false; }
+                } else {
+                    overlay.style.display = 'none';
+                    if (document.getElementById('tool').value === 'draw' && canvas) canvas.isDrawingMode = true;
+                }
+            }
+        });
+    </script>
 </body>
 </html>

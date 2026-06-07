@@ -18,6 +18,8 @@ io.on('connection', (socket) => {
             roomHistory[roomName] = { maxPage: 1, pages: {} };
         }
         socket.emit('canvas-data', { page: 1, canvas: roomHistory[roomName].pages[1] || null });
+        // 入室時に現在の最大ページ数を共有
+        socket.emit('max-page-updated', roomHistory[roomName].maxPage);
     });
 
     socket.on('switch-page', (pageNumber) => {
@@ -35,16 +37,27 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 🌟 新機能：先生が全ページを一気に作った時の処理
+    socket.on('set-max-page', (max) => {
+        if (socket.roomName && roomHistory[socket.roomName]) {
+            roomHistory[socket.roomName].maxPage = max;
+            io.to(socket.roomName).emit('max-page-updated', max);
+        }
+    });
+
+    // 🌟 新機能：先生がモニタリング画面を開いた時、全ページのデータを送る
+    socket.on('request-all-pages', () => {
+        if (socket.roomName && roomHistory[socket.roomName]) {
+            socket.emit('all-pages-data', roomHistory[socket.roomName].pages);
+        }
+    });
+
     socket.on('clear-canvas', () => {
         if (socket.roomName) socket.to(socket.roomName).emit('clear-canvas-local');
     });
 
     socket.on('lock-board', (isLocked) => {
         if (socket.roomName) socket.to(socket.roomName).emit('lock-board', isLocked);
-    });
-
-    socket.on('submit-work', (data) => {
-        if (socket.roomName) socket.to(socket.roomName).emit('receive-submission', data);
     });
 
     socket.on('pointer-move', (data) => {
