@@ -131,7 +131,7 @@
     <script>
         const socket = io();
         let canvas;
-        let isReceiving = false; // 通信中の暴走を防ぐ超重要フラグ
+        let isReceiving = false; 
         let myName = '';
         let myRoom = '';
         let isTeacher = false;
@@ -140,7 +140,8 @@
         let currentPage = 1;
         let maxPage = 1;
 
-        const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'offsetX', 'offsetY', 'isVerticalText'];
+        // 🌟 枠の自動サイズ調整のための「minW」「minH」を保存データに追加
+        const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'relX', 'relY', 'isVerticalText', 'minW', 'minH'];
 
         const bgGrid = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 40 0 L 0 0 0 40" fill="none" stroke="%23e0e0e0" stroke-width="1"/></svg>';
         const bgRuled = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 39 0 L 39 40" fill="none" stroke="%23cccccc" stroke-width="1"/></svg>';
@@ -173,7 +174,7 @@
 
             renderPageButtons();
             initCanvas();
-            changeBackground(true); // 初期背景（送信しない）
+            changeBackground(true); 
         }
 
         function renderPageButtons() {
@@ -188,13 +189,22 @@
             }
         }
 
-        // 🌟 修正：ページ切り替え時に絶対にデータを上書き消去させない
+        // 🌟 修正2：ページ切り替え時に絶対にデータが消えない最強の処理
         function switchPage(pageNumber) {
+            if (currentPage === pageNumber) return;
+            
+            // ① 切り替える「前」に、今のページを確実にサーバーに保存！
+            emitCanvasData(); 
+            
+            // ② ページ番号を変更
             currentPage = pageNumber;
             renderPageButtons();
+            
+            // ③ 画面を真っ白にして、新しいページを要求
             if(canvas) {
-                isReceiving = true; // キャンバスを消す間、絶対に送信させない
+                isReceiving = true;
                 canvas.clear();
+                changeBackground(true);
                 isReceiving = false;
             }
             socket.emit('switch-page', pageNumber);
@@ -246,7 +256,6 @@
             canvas.freeDrawingBrush.color = document.getElementById('colorPicker').value;
         }
 
-        // 🌟 修正：背景を変えた時に意図せずデータが消えないように制御
         function changeBackground(skipEmit = false) {
             if(!canvas) return;
             const bgType = document.getElementById('bgSelect').value;
@@ -254,20 +263,45 @@
                 canvas.renderAll();
                 if (!skipEmit && !isReceiving) emitCanvasData();
             };
-            
-            if (bgType === 'white') {
-                canvas.setBackgroundColor('#ffffff', callback);
-            } else if (bgType === 'grid') {
-                canvas.setBackgroundColor({ source: bgGrid, repeat: 'repeat' }, callback);
-            } else if (bgType === 'ruled') {
-                canvas.setBackgroundColor({ source: bgRuled, repeat: 'repeat' }, callback);
-            }
+            if (bgType === 'white') canvas.setBackgroundColor('#ffffff', callback);
+            else if (bgType === 'grid') canvas.setBackgroundColor({ source: bgGrid, repeat: 'repeat' }, callback);
+            else if (bgType === 'ruled') canvas.setBackgroundColor({ source: bgRuled, repeat: 'repeat' }, callback);
         }
 
+        // 🌟 修正3：枠と文字をリンクさせ、文字数に合わせて枠を自動リサイズ！
         function setupLink(frame, text) {
-            frame.off('moving'); text.off('moving');
-            frame.on('moving', () => { text.set({ left: frame.left + frame.offsetX, top: frame.top + frame.offsetY }); text.setCoords(); });
-            text.on('moving', () => { frame.set({ left: text.left + text.offsetX, top: text.top + text.offsetY }); frame.setCoords(); });
+            frame.off('moving'); text.off('moving'); text.off('changed');
+            
+            // 動かす時の連携
+            frame.on('moving', () => { text.set({ left: frame.left + frame.relX, top: frame.top + frame.relY }); text.setCoords(); });
+            text.on('moving', () => { frame.set({ left: text.left - frame.relX, top: text.top - frame.relY }); frame.setCoords(); });
+            
+            // 文字が打ち込まれた時の自動リサイズ機能
+            text.on('changed', () => {
+                fixVerticalText(text); // 縦書きの句読点修正
+
+                const rect = frame.getObjects()[0]; // 枠線の四角形
+                const minW = frame.minW || 0;
+                const minH = frame.minH || 0;
+                
+                // 文字の大きさに合わせて、枠をビヨーンと伸ばす！
+                const newW = Math.max(minW, text.width + 60);
+                const newH = Math.max(minH, text.height + 60);
+                
+                if (rect.width !== newW || rect.height !== newH) {
+                    rect.set({ width: newW, height: newH });
+                    
+                    const oldLeft = frame.left;
+                    const oldTop = frame.top;
+                    
+                    frame.addWithUpdate(); // 枠のサイズを確定
+                    frame.set({ left: oldLeft, top: oldTop }); // 位置がズレるのを防ぐ
+                    frame.setCoords();
+                    
+                    canvas.renderAll();
+                    emitCanvasData();
+                }
+            });
         }
 
         function getScrollOffset() {
@@ -315,8 +349,12 @@
             }
 
             const linkedId = Date.now().toString();
-            frameGroup.set({ linkedId: linkedId, linkRole: 'frame', offsetX: tx - offset.x, offsetY: ty - offset.y });
-            innerText.set({ linkedId: linkedId, linkRole: 'text', offsetX: offset.x - tx, offsetY: offset.y - ty });
+            const relX = tx - offset.x;
+            const relY = ty - offset.y;
+
+            // 枠の最小サイズ（minW, minH）と、文字との距離（relX, relY）を記憶
+            frameGroup.set({ linkedId: linkedId, linkRole: 'frame', relX: relX, relY: relY, minW: rw, minH: rh });
+            innerText.set({ linkedId: linkedId, linkRole: 'text', relX: relX, relY: relY });
 
             setPermissions(frameGroup);
             setPermissions(innerText);
@@ -514,6 +552,7 @@
 
             canvas.on('object:modified', () => emitCanvasData());
 
+            // 🌟 修正1：画像を貼り付けた時に、超高速圧縮して通信パンクを防ぐ！
             window.addEventListener('paste', (e) => {
                 if (isLocked && !isTeacher) return;
                 const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -526,16 +565,31 @@
                             const imgObj = new Image();
                             imgObj.src = event.target.result;
                             imgObj.onload = () => {
-                                const image = new fabric.Image(imgObj);
-                                const offset = getScrollOffset(); 
-                                image.set({ left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
-                                if (image.width > 600) image.scaleToWidth(600);
-                                setPermissions(image);
-                                canvas.add(image);
-                                canvas.setActiveObject(image);
-                                document.getElementById('tool').value = 'select';
-                                canvas.isDrawingMode = false;
-                                emitCanvasData();
+                                // 画像を小さく圧縮する魔法（これで30人が同時でもフリーズしません！）
+                                const MAX_WIDTH = 800;
+                                let scale = 1;
+                                if (imgObj.width > MAX_WIDTH) scale = MAX_WIDTH / imgObj.width;
+                                
+                                const tempCanvas = document.createElement('canvas');
+                                tempCanvas.width = imgObj.width * scale;
+                                tempCanvas.height = imgObj.height * scale;
+                                const ctx = tempCanvas.getContext('2d');
+                                ctx.drawImage(imgObj, 0, 0, tempCanvas.width, tempCanvas.height);
+                                
+                                // JPEG形式で容量を大幅カット
+                                const compressedDataURL = tempCanvas.toDataURL('image/jpeg', 0.7);
+                                
+                                fabric.Image.fromURL(compressedDataURL, (image) => {
+                                    const offset = getScrollOffset(); 
+                                    image.set({ left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
+                                    if (image.width > 600) image.scaleToWidth(600);
+                                    setPermissions(image);
+                                    canvas.add(image);
+                                    canvas.setActiveObject(image);
+                                    document.getElementById('tool').value = 'select';
+                                    canvas.isDrawingMode = false;
+                                    emitCanvasData();
+                                });
                             }
                         };
                         reader.readAsDataURL(blob);
@@ -574,7 +628,6 @@
                     i++; renderNextThumb(); return;
                 }
 
-                // 🌟 修正：サムネイル生成をPNG形式にし、背景の黒塗りを完全回避！
                 offscreen.clear();
                 offscreen.backgroundColor = '#ffffff';
                 if (rawData.bg === 'grid') offscreen.backgroundColor = { source: bgGrid, repeat: 'repeat' };
@@ -582,7 +635,7 @@
 
                 offscreen.loadFromJSON(rawData, () => {
                     offscreen.renderAll();
-                    const imgUrl = offscreen.toDataURL({ format: 'png' }); // ←ここをPNGに変更
+                    const imgUrl = offscreen.toDataURL({ format: 'png' }); 
                     grid.innerHTML += `<div class="gallery-item" onclick="switchPage(${pNum}); document.getElementById('gallery-modal').style.display='none'" style="cursor:pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"><h3>📄 ページ ${pNum}</h3><img src="${imgUrl}"></div>`;
                     i++; renderNextThumb();
                 });
