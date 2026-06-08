@@ -73,6 +73,13 @@
                 <option value="h">➡ 横書き</option>
                 <option value="v">⬇ 縦書き</option>
             </select>
+            
+            <select id="fontSizeSelect" onchange="changeFontSize()">
+                <option value="16">A 小</option>
+                <option value="24" selected>A 中</option>
+                <option value="36">A 大</option>
+                <option value="48">A 特大</option>
+            </select>
 
             <select id="tool" onchange="changeTool()">
                 <option value="select">👆 えらぶ</option>
@@ -140,14 +147,110 @@
         let currentPage = 1;
         let maxPage = 1;
 
-        // 🌟 枠の自動サイズ調整のための「minW」「minH」を保存データに追加
         const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'relX', 'relY', 'isVerticalText', 'minW', 'minH'];
 
         const bgGrid = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 40 0 L 0 0 0 40" fill="none" stroke="%23e0e0e0" stroke-width="1"/></svg>';
         const bgRuled = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 39 0 L 39 40" fill="none" stroke="%23cccccc" stroke-width="1"/></svg>';
 
+        function changeFontSize() {
+            if(!canvas) return;
+            const size = parseInt(document.getElementById('fontSizeSelect').value, 10);
+            const activeObjects = canvas.getActiveObjects();
+            if (activeObjects.length > 0) {
+                activeObjects.forEach(obj => {
+                    if (obj.type === 'i-text' || obj.type === 'textbox') {
+                        obj.set('fontSize', size);
+                        if (obj.isVerticalText) obj.set('width', size + 10);
+                    }
+                });
+                canvas.renderAll();
+                emitCanvasData();
+            }
+        }
+
         function fixVerticalText(obj) {
             if (!obj || !obj.text || !obj.isVerticalText) return;
+            
+            // 手動改行（Enterキー）が押された時、新しい列を左に作る処理
+            if (obj.text.includes('\n')) {
+                const parts = obj.text.split('\n');
+                obj.set('text', parts[0]);
+                
+                let currentObj = obj;
+                for (let i = 1; i < parts.length; i++) {
+                    const offsetLeft = currentObj.fontSize + 16;
+                    const newObj = new fabric.Textbox(parts[i] || '', {
+                        left: currentObj.left - offsetLeft,
+                        top: currentObj.top,
+                        width: currentObj.fontSize + 10,
+                        fontSize: currentObj.fontSize,
+                        fill: currentObj.fill,
+                        author: currentObj.author,
+                        timestamp: new Date().toLocaleString(),
+                        splitByGrapheme: true,
+                        isVerticalText: true
+                    });
+                    
+                    if (currentObj.linkedId && currentObj.linkRole === 'text') {
+                        newObj.set({ linkedId: currentObj.linkedId, linkRole: 'text', relX: currentObj.relX - offsetLeft, relY: currentObj.relY });
+                    }
+                    
+                    setPermissions(newObj);
+                    canvas.add(newObj);
+                    newObj.on('changed', () => fixVerticalText(newObj));
+                    currentObj = newObj;
+                }
+                
+                canvas.setActiveObject(currentObj);
+                currentObj.enterEditing();
+                
+                let original = obj.text;
+                let fixed = original.replace(/、/g, '︑').replace(/。/g, '︒').replace(/「/g, '﹃').replace(/」/g, '﹄').replace(/ー/g, '丨');
+                if (original !== fixed) obj.set('text', fixed);
+                
+                if (canvas) canvas.renderAll();
+                emitCanvasData();
+                return;
+            }
+
+            // 下に長くなりすぎた場合の自動列替え処理
+            obj.initDimensions();
+            const MAX_HEIGHT = 400; // 枠の縦幅の目安
+            if (obj.height > MAX_HEIGHT && obj.text.length > 1) {
+                const lastChar = obj.text.slice(-1);
+                obj.set('text', obj.text.slice(0, -1)); 
+                
+                const offsetLeft = obj.fontSize + 16;
+                const newObj = new fabric.Textbox(lastChar, {
+                    left: obj.left - offsetLeft,
+                    top: obj.top,
+                    width: obj.fontSize + 10,
+                    fontSize: obj.fontSize,
+                    fill: obj.fill,
+                    author: obj.author,
+                    timestamp: new Date().toLocaleString(),
+                    splitByGrapheme: true,
+                    isVerticalText: true
+                });
+                
+                if (obj.linkedId && obj.linkRole === 'text') {
+                    newObj.set({ linkedId: obj.linkedId, linkRole: 'text', relX: obj.relX - offsetLeft, relY: obj.relY });
+                }
+                
+                setPermissions(newObj);
+                canvas.add(newObj);
+                newObj.on('changed', () => fixVerticalText(newObj));
+                
+                canvas.setActiveObject(newObj);
+                newObj.enterEditing();
+                newObj.selectionStart = 1;
+                newObj.selectionEnd = 1;
+                
+                if (canvas) canvas.renderAll();
+                emitCanvasData();
+                return;
+            }
+
             const original = obj.text;
             const fixed = original.replace(/、/g, '︑').replace(/。/g, '︒').replace(/「/g, '﹃').replace(/」/g, '﹄').replace(/ー/g, '丨');
             if (original !== fixed) { obj.set('text', fixed); if (canvas) canvas.renderAll(); }
@@ -189,18 +292,11 @@
             }
         }
 
-        // 🌟 修正2：ページ切り替え時に絶対にデータが消えない最強の処理
         function switchPage(pageNumber) {
             if (currentPage === pageNumber) return;
-            
-            // ① 切り替える「前」に、今のページを確実にサーバーに保存！
             emitCanvasData(); 
-            
-            // ② ページ番号を変更
             currentPage = pageNumber;
             renderPageButtons();
-            
-            // ③ 画面を真っ白にして、新しいページを要求
             if(canvas) {
                 isReceiving = true;
                 canvas.clear();
@@ -268,34 +364,29 @@
             else if (bgType === 'ruled') canvas.setBackgroundColor({ source: bgRuled, repeat: 'repeat' }, callback);
         }
 
-        // 🌟 修正3：枠と文字をリンクさせ、文字数に合わせて枠を自動リサイズ！
         function setupLink(frame, text) {
             frame.off('moving'); text.off('moving'); text.off('changed');
             
-            // 動かす時の連携
             frame.on('moving', () => { text.set({ left: frame.left + frame.relX, top: frame.top + frame.relY }); text.setCoords(); });
             text.on('moving', () => { frame.set({ left: text.left - frame.relX, top: text.top - frame.relY }); frame.setCoords(); });
             
-            // 文字が打ち込まれた時の自動リサイズ機能
             text.on('changed', () => {
-                fixVerticalText(text); // 縦書きの句読点修正
+                fixVerticalText(text);
 
-                const rect = frame.getObjects()[0]; // 枠線の四角形
+                const rect = frame.getObjects()[0]; 
                 const minW = frame.minW || 0;
                 const minH = frame.minH || 0;
                 
-                // 文字の大きさに合わせて、枠をビヨーンと伸ばす！
                 const newW = Math.max(minW, text.width + 60);
                 const newH = Math.max(minH, text.height + 60);
                 
                 if (rect.width !== newW || rect.height !== newH) {
                     rect.set({ width: newW, height: newH });
-                    
                     const oldLeft = frame.left;
                     const oldTop = frame.top;
                     
-                    frame.addWithUpdate(); // 枠のサイズを確定
-                    frame.set({ left: oldLeft, top: oldTop }); // 位置がズレるのを防ぐ
+                    frame.addWithUpdate(); 
+                    frame.set({ left: oldLeft, top: oldTop }); 
                     frame.setCoords();
                     
                     canvas.renderAll();
@@ -340,19 +431,21 @@
             if (isVertical) placeholder = placeholder.replace('を', 'を\n');
             
             let innerText;
+            const sizeEl = document.getElementById('fontSizeSelect');
+            const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 24;
+
             if (isVertical) {
-                innerText = new fabric.Textbox(placeholder, { left: tx, top: ty, fontSize: 24, fill: '#333', author: myName, width: 30, splitByGrapheme: true, isVerticalText: true });
+                innerText = new fabric.Textbox(placeholder, { left: tx, top: ty, fontSize: fontSize, fill: '#333', author: myName, width: fontSize + 10, splitByGrapheme: true, isVerticalText: true });
                 innerText.on('changed', () => fixVerticalText(innerText));
                 fixVerticalText(innerText);
             } else {
-                innerText = new fabric.IText(placeholder.replace('\n',''), { left: tx, top: ty, fontSize: 24, fill: '#333', author: myName });
+                innerText = new fabric.IText(placeholder.replace('\n',''), { left: tx, top: ty, fontSize: fontSize, fill: '#333', author: myName });
             }
 
             const linkedId = Date.now().toString();
             const relX = tx - offset.x;
             const relY = ty - offset.y;
 
-            // 枠の最小サイズ（minW, minH）と、文字との距離（relX, relY）を記憶
             frameGroup.set({ linkedId: linkedId, linkRole: 'frame', relX: relX, relY: relY, minW: rw, minH: rh });
             innerText.set({ linkedId: linkedId, linkRole: 'text', relX: relX, relY: relY });
 
@@ -380,12 +473,14 @@
             if (!canvas || (isLocked && !isTeacher)) return;
             const isVertical = (document.getElementById('textDirection').value === 'v');
             const offset = getScrollOffset();
+            const sizeEl = document.getElementById('fontSizeSelect');
+            const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 22;
 
             let stickyText;
-            const commonOpts = { left: offset.x + 50, top: offset.y + 50, fontSize: 22, padding: 15, backgroundColor: color, fill: '#333', author: myName, timestamp: new Date().toLocaleString(), shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 }) };
+            const commonOpts = { left: offset.x + 50, top: offset.y + 50, fontSize: fontSize, padding: 15, backgroundColor: color, fill: '#333', author: myName, timestamp: new Date().toLocaleString(), shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 }) };
             
             if (isVertical) {
-                commonOpts.width = 30;
+                commonOpts.width = fontSize + 10;
                 commonOpts.splitByGrapheme = true;
                 commonOpts.isVerticalText = true;
                 stickyText = new fabric.Textbox('ここに入力', commonOpts);
@@ -518,12 +613,15 @@
                     const isVertical = (document.getElementById('textDirection').value === 'v');
                     const pointer = canvas.getPointer(options.e);
                     const color = document.getElementById('colorPicker').value;
-                    const opts = { left: pointer.x, top: pointer.y, fill: color, fontSize: 24, author: myName, timestamp: new Date().toLocaleString() };
+                    const sizeEl = document.getElementById('fontSizeSelect');
+                    const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 24;
+                    
+                    const opts = { left: pointer.x, top: pointer.y, fill: color, fontSize: fontSize, author: myName, timestamp: new Date().toLocaleString() };
                     
                     let textObj;
                     if (isVertical) {
                         opts.splitByGrapheme = true;
-                        opts.width = 30;
+                        opts.width = fontSize + 10;
                         opts.isVerticalText = true;
                         textObj = new fabric.Textbox('ここに入力', opts);
                         textObj.on('changed', () => fixVerticalText(textObj));
@@ -552,7 +650,6 @@
 
             canvas.on('object:modified', () => emitCanvasData());
 
-            // 🌟 修正1：画像を貼り付けた時に、超高速圧縮して通信パンクを防ぐ！
             window.addEventListener('paste', (e) => {
                 if (isLocked && !isTeacher) return;
                 const items = (e.clipboardData || e.originalEvent.clipboardData).items;
@@ -565,7 +662,6 @@
                             const imgObj = new Image();
                             imgObj.src = event.target.result;
                             imgObj.onload = () => {
-                                // 画像を小さく圧縮する魔法（これで30人が同時でもフリーズしません！）
                                 const MAX_WIDTH = 800;
                                 let scale = 1;
                                 if (imgObj.width > MAX_WIDTH) scale = MAX_WIDTH / imgObj.width;
@@ -576,7 +672,6 @@
                                 const ctx = tempCanvas.getContext('2d');
                                 ctx.drawImage(imgObj, 0, 0, tempCanvas.width, tempCanvas.height);
                                 
-                                // JPEG形式で容量を大幅カット
                                 const compressedDataURL = tempCanvas.toDataURL('image/jpeg', 0.7);
                                 
                                 fabric.Image.fromURL(compressedDataURL, (image) => {

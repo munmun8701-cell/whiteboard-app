@@ -11,8 +11,99 @@ let maxPage = 1;
 
 function getEl(id) { return document.getElementById(id); }
 
-// 🌟 修正ポイント：すべての関数の「設計図」を一番外側に用意しました！
-// これでボタンがいつ押されても、絶対に迷子になりません。
+// フォントサイズ変更機能
+function changeFontSize() {
+    if(!canvas) return;
+    const sizeEl = getEl('fontSizeSelect');
+    const size = sizeEl ? parseInt(sizeEl.value, 10) : 24;
+    const activeObjects = canvas.getActiveObjects();
+    if (activeObjects.length > 0) {
+        activeObjects.forEach(obj => {
+            if (obj.type === 'i-text' || obj.type === 'textbox') {
+                obj.set('fontSize', size);
+                if (obj.isVerticalText) obj.set('width', size + 10);
+            }
+        });
+        canvas.renderAll();
+        emitCanvasData();
+    }
+}
+
+// 縦書き時の自動改列と手動改列（行替え）機能
+function fixVerticalText(obj) {
+    if (!obj || !obj.text || !obj.isVerticalText) return;
+    
+    if (obj.text.includes('\n')) {
+        const parts = obj.text.split('\n');
+        obj.set('text', parts[0]);
+        
+        let currentObj = obj;
+        for (let i = 1; i < parts.length; i++) {
+            const offsetLeft = currentObj.fontSize + 16;
+            const newObj = new fabric.Textbox(parts[i] || '', {
+                left: currentObj.left - offsetLeft,
+                top: currentObj.top,
+                width: currentObj.fontSize + 10,
+                fontSize: currentObj.fontSize,
+                fill: currentObj.fill,
+                author: currentObj.author,
+                timestamp: new Date().toLocaleString(),
+                splitByGrapheme: true,
+                isVerticalText: true
+            });
+            setPermissions(newObj);
+            canvas.add(newObj);
+            newObj.on('changed', () => fixVerticalText(newObj));
+            currentObj = newObj;
+        }
+        
+        canvas.setActiveObject(currentObj);
+        currentObj.enterEditing();
+        
+        let original = obj.text;
+        let fixed = original.replace(/、/g, '︑').replace(/。/g, '︒').replace(/「/g, '﹃').replace(/」/g, '﹄').replace(/ー/g, '丨');
+        if (original !== fixed) obj.set('text', fixed);
+        if (canvas) canvas.renderAll();
+        emitCanvasData();
+        return;
+    }
+
+    obj.initDimensions();
+    const MAX_HEIGHT = 400; 
+    if (obj.height > MAX_HEIGHT && obj.text.length > 1) {
+        const lastChar = obj.text.slice(-1);
+        obj.set('text', obj.text.slice(0, -1)); 
+        
+        const offsetLeft = obj.fontSize + 16;
+        const newObj = new fabric.Textbox(lastChar, {
+            left: obj.left - offsetLeft,
+            top: obj.top,
+            width: obj.fontSize + 10,
+            fontSize: obj.fontSize,
+            fill: obj.fill,
+            author: obj.author,
+            timestamp: new Date().toLocaleString(),
+            splitByGrapheme: true,
+            isVerticalText: true
+        });
+        setPermissions(newObj);
+        canvas.add(newObj);
+        newObj.on('changed', () => fixVerticalText(newObj));
+        
+        canvas.setActiveObject(newObj);
+        newObj.enterEditing();
+        newObj.selectionStart = 1;
+        newObj.selectionEnd = 1;
+        
+        if (canvas) canvas.renderAll();
+        emitCanvasData();
+        return;
+    }
+
+    const original = obj.text;
+    const fixed = original.replace(/、/g, '︑').replace(/。/g, '︒').replace(/「/g, '﹃').replace(/」/g, '﹄').replace(/ー/g, '丨');
+    if (original !== fixed) { obj.set('text', fixed); if (canvas) canvas.renderAll(); }
+}
 
 function joinRoom() {
     myName = getEl('username') ? getEl('username').value.trim() : 'ななし';
@@ -80,6 +171,7 @@ function getScrollOffset() {
 
 function createBoardFrame(type) {
     if(!canvas) return;
+    const isVertical = (getEl('textDirection') && getEl('textDirection').value === 'v');
     const isGaku = (type === '学');
     const color = isGaku ? '#1e88e5' : '#dc3545';
     const offset = getScrollOffset();
@@ -93,7 +185,19 @@ function createBoardFrame(type) {
     setPermissions(frameGroup);
     canvas.add(frameGroup);
 
-    const innerText = new fabric.IText(isGaku ? 'めあてを入力...' : 'まとめを入力...', { left: offset.x + 40, top: offset.y + 30, fontSize: 24, fill: '#333', author: myName });
+    const sizeEl = getEl('fontSizeSelect');
+    const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 24;
+    const placeholder = isGaku ? 'めあてを入力...' : 'まとめを入力...';
+    
+    let innerText;
+    if (isVertical) {
+        innerText = new fabric.Textbox(placeholder.replace('を', 'を\n'), { left: offset.x + 40, top: offset.y + 30, fontSize: fontSize, fill: '#333', author: myName, width: fontSize + 10, splitByGrapheme: true, isVerticalText: true });
+        innerText.on('changed', () => fixVerticalText(innerText));
+        fixVerticalText(innerText);
+    } else {
+        innerText = new fabric.IText(placeholder, { left: offset.x + 40, top: offset.y + 30, fontSize: fontSize, fill: '#333', author: myName });
+    }
+    
     setPermissions(innerText);
     canvas.add(innerText);
 
@@ -105,15 +209,31 @@ function createBoardFrame(type) {
 
 function addSticky() {
     if(!canvas) return;
+    const isVertical = (getEl('textDirection') && getEl('textDirection').value === 'v');
     const colorEl = getEl('stickyColor');
     const selectedColor = colorEl ? colorEl.value : '#fff9c4';
+    const sizeEl = getEl('fontSizeSelect');
+    const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 22;
     const offset = getScrollOffset();
 
-    const stickyText = new fabric.IText('ここに入力', {
+    const commonOpts = {
         left: offset.x + Math.random() * 50, top: offset.y + Math.random() * 50,
-        fontSize: 22, padding: 15, backgroundColor: selectedColor, fill: '#333', author: myName, timestamp: new Date().toLocaleString(),
+        fontSize: fontSize, padding: 15, backgroundColor: selectedColor, fill: '#333', author: myName, timestamp: new Date().toLocaleString(),
         shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 })
-    });
+    };
+
+    let stickyText;
+    if (isVertical) {
+        commonOpts.width = fontSize + 10;
+        commonOpts.splitByGrapheme = true;
+        commonOpts.isVerticalText = true;
+        stickyText = new fabric.Textbox('ここに入力', commonOpts);
+        stickyText.on('changed', () => fixVerticalText(stickyText));
+        fixVerticalText(stickyText);
+    } else {
+        stickyText = new fabric.IText('ここに入力', commonOpts);
+    }
+
     setPermissions(stickyText);
     canvas.add(stickyText);
     canvas.setActiveObject(stickyText);
@@ -194,7 +314,6 @@ function exportPDF() {
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
     
-    // PDF保存時に確実に背景を白にする
     canvas.backgroundColor = '#ffffff';
     canvas.renderAll();
     
@@ -209,7 +328,7 @@ function exportPDF() {
 function emitCanvasData() {
     if (isReceiving || !canvas) return;
     const objectsToSave = canvas.getObjects().filter(obj => obj.author);
-    const json = { objects: objectsToSave.map(obj => obj.toObject(['author', 'timestamp'])) };
+    const json = { objects: objectsToSave.map(obj => obj.toObject(['author', 'timestamp', 'isVerticalText'])) };
     socket.emit('canvas-data', { page: currentPage, canvas: json });
 }
 
@@ -244,14 +363,31 @@ function initCanvas() {
     canvas.on('mouse:down', (options) => {
         const toolEl = getEl('tool');
         if (toolEl && toolEl.value === 'text' && !canvas.isDrawingMode) {
+            const isVertical = (getEl('textDirection') && getEl('textDirection').value === 'v');
             const pointer = canvas.getPointer(options.e);
             const colorEl = getEl('colorPicker');
-            const text = new fabric.IText('ここに入力', { left: pointer.x, top: pointer.y, fill: colorEl ? colorEl.value : '#000', fontSize: 24, author: myName, timestamp: new Date().toLocaleString() });
-            setPermissions(text);
-            canvas.add(text);
-            canvas.setActiveObject(text);
-            text.enterEditing();
-            text.selectAll();
+            const sizeEl = getEl('fontSizeSelect');
+            const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 24;
+            
+            const opts = { left: pointer.x, top: pointer.y, fill: colorEl ? colorEl.value : '#000', fontSize: fontSize, author: myName, timestamp: new Date().toLocaleString() };
+            
+            let textObj;
+            if (isVertical) {
+                opts.splitByGrapheme = true;
+                opts.width = fontSize + 10;
+                opts.isVerticalText = true;
+                textObj = new fabric.Textbox('ここに入力', opts);
+                textObj.on('changed', () => fixVerticalText(textObj));
+                fixVerticalText(textObj);
+            } else {
+                textObj = new fabric.IText('ここに入力', opts);
+            }
+
+            setPermissions(textObj);
+            canvas.add(textObj);
+            canvas.setActiveObject(textObj);
+            textObj.enterEditing();
+            textObj.selectAll();
             emitCanvasData();
             
             toolEl.value = 'select'; 
@@ -305,7 +441,6 @@ function initCanvas() {
     });
 }
 
-// 🌟 修正ポイント：すべての準備が整ってからボタンと設計図を繋げる！
 window.addEventListener('DOMContentLoaded', () => {
     getEl('joinBtn')?.addEventListener('click', joinRoom);
     getEl('addPageBtn')?.addEventListener('click', addPage);
@@ -350,11 +485,15 @@ socket.on('canvas-data', (data) => {
     if(canvas) {
         canvas.loadFromJSON(canvasRaw, () => {
             canvas.backgroundColor = '#ffffff'; 
+            canvas.getObjects().forEach(obj => {
+                if (obj.isVerticalText) obj.on('changed', () => fixVerticalText(obj));
+            });
             canvas.renderAll();
             isReceiving = false;
         }, (o, object) => {
             object.set('author', o.author);
             object.set('timestamp', o.timestamp);
+            if (o.isVerticalText !== undefined) object.set('isVerticalText', o.isVerticalText);
             setPermissions(object);
         });
     }
