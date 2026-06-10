@@ -181,7 +181,7 @@
 
         function getEl(id) { return document.getElementById(id); }
 
-        // 🌟通信項目
+        // 通信項目にobjectIdとeditorName（編集者）を追加
         const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'relX', 'relY', 'isVerticalText', 'minW', 'minH', 'objectId', 'editorName'];
 
         function generateId() {
@@ -287,11 +287,11 @@
             if (original !== fixed) { obj.set('text', fixed); if (canvas) canvas.renderAll(); }
         }
 
-        // 🌟 バグを消し去る【部分同期システム】
         function getFullJson() {
             return { bg: getEl('bgSelect').value, objects: canvas.getObjects().filter(o => o.author).map(o => o.toObject(customProps)) };
         }
 
+        // 🌟 バグを消し去る【部分同期システム】
         function emitObjectModify(obj) {
             if (isReceiving || !obj.objectId) return;
             socket.emit('canvas-data', {
@@ -318,7 +318,7 @@
             });
         }
 
-        // 🌟 誰が触っているか表示する
+        // 🌟 誰が触っているか表示・ロックする
         function broadcastLock(objects, isLocked) {
             if (!objects || isReceiving) return;
             objects.forEach(obj => {
@@ -389,7 +389,6 @@
 
         function switchPage(pageNumber) {
             if (currentPage === pageNumber || isPresentationMode) return;
-            // ページ移動時はサーバーに最新状態がすでにあるため、全体の再送信(emitFullCanvas)を廃止！
             currentPage = pageNumber;
             renderPageButtons();
             if(canvas) {
@@ -658,6 +657,7 @@
                 socket.emit('force-presentation', currentPage);
             }
         }
+
         function cancelPresentation() {
             socket.emit('cancel-presentation');
             alert('発表モードを解除しました');
@@ -817,44 +817,50 @@
                 setPermissions(options.path); emitObjectAdd(options.path);
             });
 
-            // 🌟 図形を動かした時に、ちゃんと他の人にも共有する
+            // 🌟 図形を動かした時に「確実に」位置を確定して同期する
             canvas.on('object:modified', (e) => {
                 if (e.target.type === 'activeSelection') {
-                    e.target.getObjects().forEach(obj => { obj.setCoords(); emitObjectModify(obj); });
+                    e.target.getObjects().forEach(obj => { 
+                        obj.setCoords(); 
+                        emitObjectModify(obj); 
+                    });
                 } else {
                     e.target.setCoords();
                     emitObjectModify(e.target);
-                    // 枠と文字がペアの時は、相方も一緒に共有する
                     if (e.target.linkedId) {
                         const pair = canvas.getObjects().find(o => o.linkedId === e.target.linkedId && o.objectId !== e.target.objectId);
-                        if (pair) emitObjectModify(pair);
+                        if (pair) {
+                            pair.setCoords();
+                            emitObjectModify(pair);
+                        }
                     }
                 }
             });
 
-            // なまえタグ（ロック機能）の通信
+            // 🌟 なまえタグ（ロック機能）の通信
             canvas.on('selection:created', (e) => broadcastLock(e.selected, true));
             canvas.on('selection:updated', (e) => { broadcastLock(e.deselected, false); broadcastLock(e.selected, true); });
             canvas.on('selection:cleared', (e) => broadcastLock(e.deselected, false));
 
-            // なまえタグの表示
+            // 🌟 なまえタグの表示（崩れないように調整）
             canvas.on('after:render', function() {
                 const ctx = canvas.contextContainer;
                 canvas.getObjects().forEach(obj => {
                     if (obj.editorName && obj.editorName !== myName) {
                         const text = obj.editorName + " 編集中";
-                        ctx.font = '14px sans-serif';
+                        ctx.font = 'bold 14px sans-serif';
                         const textWidth = ctx.measureText(text).width;
-                        const x = obj.left || 0;
-                        const y = (obj.top || 0) - 20;
+                        const br = obj.getBoundingRect();
+                        const x = br.left;
+                        const y = br.top - 25;
                         
-                        ctx.fillStyle = 'rgba(255, 152, 0, 0.9)'; 
+                        ctx.fillStyle = '#ff9800'; 
                         ctx.beginPath();
-                        ctx.roundRect ? ctx.roundRect(x - 5, y - 15, textWidth + 10, 20, 10) : ctx.rect(x - 5, y - 15, textWidth + 10, 20);
+                        ctx.roundRect ? ctx.roundRect(x, y, textWidth + 16, 22, 6) : ctx.rect(x, y, textWidth + 16, 22);
                         ctx.fill();
                         
                         ctx.fillStyle = 'white';
-                        ctx.fillText(text, x, y - 1);
+                        ctx.fillText(text, x + 8, y + 16);
                     }
                 });
             });
@@ -943,18 +949,34 @@
             renderNextThumb();
         });
 
-        // 🌟 発表モードのバグ完全修正
+        // 🌟 発表モードで固まるバグを完全に修正！
         socket.on('force-presentation', (page) => {
             if (!isTeacher) {
-                if (currentPage !== page) {
-                    isPresentationMode = false; // 一時的に解除して移動を許可
-                    switchPage(page);
-                }
-                isPresentationMode = true; // 強制ロック
+                isPresentationMode = true; 
                 document.getElementById('presentation-toast').style.display = 'block';
-                if(canvas) {
-                    canvas.discardActiveObject(); canvas.isDrawingMode = false;
-                    canvas.getObjects().forEach(obj => setPermissions(obj)); canvas.renderAll();
+                
+                if (currentPage !== page) {
+                    // 現在の作業をこっそり保存して、先生のページへ強制移動
+                    if (!isReceiving && canvas) {
+                        socket.emit('canvas-data', { page: currentPage, canvas: getFullJson() });
+                    }
+                    currentPage = page;
+                    renderPageButtons();
+                    if(canvas) {
+                        isReceiving = true;
+                        canvas.clear();
+                        changeBackground(true);
+                        trashBin = []; 
+                        isReceiving = false;
+                    }
+                    socket.emit('switch-page', page);
+                } else {
+                    // すでに同じページにいる場合はロックだけする
+                    if(canvas) {
+                        canvas.discardActiveObject(); canvas.isDrawingMode = false;
+                        canvas.getObjects().forEach(obj => setPermissions(obj)); 
+                        canvas.requestRenderAll();
+                    }
                 }
             }
         });
@@ -971,7 +993,7 @@
             }
         });
 
-        // 🌟 データの消失を防ぐ【部分同期の受け取り】
+        // 🌟 バグ完全解決の要：部分同期の受信処理
         socket.on('canvas-data', (data) => {
             const targetPage = data.page || 1;
             if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
@@ -979,31 +1001,48 @@
 
             isReceiving = true;
 
-            // 他の人が図形を動かした時など、一部だけが変わった場合（これが文字消失を防ぎます！）
+            // 他の人が図形を動かした時など、一部だけが変わった場合（これが文字消失・図形崩壊を防ぎます！）
             if (data.partialUpdate) {
                 const p = data.partialUpdate;
                 if (p.action === 'modify') {
-                    const obj = canvas.getObjects().find(o => o.objectId === p.objectId);
-                    if (obj) { 
-                        obj.set(p.objData); 
-                        obj.setCoords(); // 🌟これで図形が端に飛んでいかなくなります！
-                        if (obj.isVerticalText) fixVerticalText(obj); 
+                    const oldObj = canvas.getObjects().find(o => o.objectId === p.objectId);
+                    if (oldObj) { 
+                        // もし自分が今まさに文字を入力中なら、置き換えずに守る！
+                        if (canvas.getActiveObject() === oldObj && oldObj.isEditing) {
+                            isReceiving = false; return; 
+                        }
                         
-                        // 枠と文字の自動リサイズ対応
-                        if (obj.linkedId && obj.linkRole === 'text') {
-                            const frame = canvas.getObjects().find(o => o.linkedId === obj.linkedId && o.linkRole === 'frame');
-                            if (frame) {
-                                const rect = frame.getObjects()[0]; 
-                                const minW = frame.minW || 0; const minH = frame.minH || 0;
-                                const newW = Math.max(minW, obj.width + 60); const newH = Math.max(minH, obj.height + 60);
-                                if (rect.width !== newW || rect.height !== newH) {
-                                    rect.set({ width: newW, height: newH });
-                                    const oldLeft = frame.left; const oldTop = frame.top;
-                                    frame.addWithUpdate(); frame.set({ left: oldLeft, top: oldTop }); frame.setCoords();
+                        // 🌟 図形が端っこに飛ぶバグを防ぐ「Enliven（再生）」処理
+                        fabric.util.enlivenObjects([p.objData], (enlivened) => {
+                            const newObj = enlivened[0];
+                            if (!newObj) return;
+
+                            const idx = canvas.getObjects().indexOf(oldObj);
+                            canvas.remove(oldObj);
+                            canvas.add(newObj);
+                            newObj.moveTo(idx);
+
+                            setPermissions(newObj);
+
+                            if (newObj.isVerticalText) {
+                                newObj.on('changed', () => { fixVerticalText(newObj); emitObjectModify(newObj); });
+                            } else if (newObj.type === 'i-text' || newObj.type === 'textbox') {
+                                newObj.on('changed', () => emitObjectModify(newObj));
+                            }
+
+                            if (newObj.linkedId) {
+                                const pair = canvas.getObjects().find(o => o.linkedId === newObj.linkedId && o.objectId !== newObj.objectId);
+                                if (pair) {
+                                    if (newObj.linkRole === 'frame') setupLink(newObj, pair);
+                                    else setupLink(pair, newObj);
                                 }
                             }
-                        }
-                        canvas.renderAll(); 
+
+                            if (oldObj.editorName) newObj.set('editorName', oldObj.editorName);
+
+                            // 🌟 文字入力のリセットを防ぐため、やさしく再描画
+                            canvas.requestRenderAll();
+                        });
                     }
                 } else if (p.action === 'add') {
                     fabric.util.enlivenObjects([p.objData], (enlivened) => {
@@ -1013,25 +1052,25 @@
                             const pair = canvas.getObjects().find(o => o.linkedId === newObj.linkedId && o.objectId !== newObj.objectId);
                             if (pair) { if (newObj.linkRole === 'frame') setupLink(newObj, pair); else setupLink(pair, newObj); }
                         }
-                        canvas.renderAll();
+                        canvas.requestRenderAll();
                     });
                 } else if (p.action === 'removeMultiple') {
                     p.objectIds.forEach(id => {
                         const obj = canvas.getObjects().find(o => o.objectId === id);
                         if (obj) canvas.remove(obj);
                     });
-                    canvas.renderAll();
+                    canvas.requestRenderAll();
                 } else if (p.action === 'lock') {
                     const obj = canvas.getObjects().find(o => o.objectId === p.objectId);
-                    if (obj) { obj.set('editorName', p.editorName); if (!isTeacher) obj.set({ selectable: false, evented: false }); canvas.renderAll(); }
+                    if (obj) { obj.set('editorName', p.editorName); if (!isTeacher) obj.set({ selectable: false, evented: false }); canvas.requestRenderAll(); }
                 } else if (p.action === 'unlock') {
                     const obj = canvas.getObjects().find(o => o.objectId === p.objectId);
-                    if (obj) { obj.set('editorName', null); setPermissions(obj); canvas.renderAll(); }
+                    if (obj) { obj.set('editorName', null); setPermissions(obj); canvas.requestRenderAll(); }
                 } else if (p.action === 'background') {
                     getEl('bgSelect').value = p.bg;
-                    if (p.bg === 'grid') canvas.setBackgroundColor({ source: bgGrid, repeat: 'repeat' }, () => canvas.renderAll());
-                    else if (p.bg === 'ruled') canvas.setBackgroundColor({ source: bgRuled, repeat: 'repeat' }, () => canvas.renderAll());
-                    else canvas.setBackgroundColor('#ffffff', () => canvas.renderAll());
+                    if (p.bg === 'grid') canvas.setBackgroundColor({ source: bgGrid, repeat: 'repeat' }, () => canvas.requestRenderAll());
+                    else if (p.bg === 'ruled') canvas.setBackgroundColor({ source: bgRuled, repeat: 'repeat' }, () => canvas.requestRenderAll());
+                    else canvas.setBackgroundColor('#ffffff', () => canvas.requestRenderAll());
                 } else if (p.action === 'clear') {
                     canvas.clear();
                     getEl('bgSelect').value = 'white';
@@ -1086,9 +1125,9 @@
             }
             const p = remotePointers[data.author];
             p.group.set({ left: data.x, top: data.y });
-            canvas.renderAll();
+            canvas.requestRenderAll();
             clearTimeout(p.timeout);
-            p.timeout = setTimeout(() => { canvas.remove(p.group); delete remotePointers[data.author]; canvas.renderAll(); }, 2000);
+            p.timeout = setTimeout(() => { canvas.remove(p.group); delete remotePointers[data.author]; canvas.requestRenderAll(); }, 2000);
         });
 
         socket.on('clear-canvas-local', () => { 
