@@ -18,8 +18,11 @@
 
         #whiteboard-screen { display: none; }
         .toolbar { display: flex; gap: 4px; justify-content: center; margin-bottom: 10px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); flex-wrap: wrap; align-items: center; }
-        select, input[type="color"] { padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; cursor: pointer; margin: 2px; }
+        select { padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; cursor: pointer; margin: 2px; }
         
+        .color-btn { display: inline-block; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid #ccc; vertical-align: middle; margin: 0 2px; }
+        .color-btn.active { border: 2px solid #ff9800; transform: scale(1.2); }
+
         .btn-blue { background-color: #007bff; }
         .btn-red { background-color: #dc3545; }
         .btn-yellow { background-color: #ffca28; color: #333; }
@@ -27,8 +30,10 @@
         .btn-gray { background-color: #6c757d; }
         .btn-green { background-color: #28a745; }
         .btn-orange { background-color: #fd7e14; }
+        .btn-pink { background-color: #e83e8c; }
 
         .teacher-only { display: none; }
+        .student-only { display: none; }
         
         #page-list-container { display: inline-flex; max-width: 250px; overflow-x: auto; white-space: nowrap; padding-bottom: 4px; align-items: center; }
         #page-list-container::-webkit-scrollbar { height: 6px; }
@@ -38,11 +43,22 @@
 
         #canvas-wrapper { width: 100%; height: 75vh; overflow: auto; border: 2px solid #ccc; background-color: white; border-radius: 8px; position: relative; }
         #lock-toast { display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: #dc3545; color: white; padding: 10px 30px; border-radius: 30px; font-size: 20px; font-weight: bold; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.3); pointer-events: none; }
+        #presentation-toast { display: none; position: absolute; top: 70px; left: 50%; transform: translateX(-50%); background: #ff9800; color: white; padding: 10px 30px; border-radius: 30px; font-size: 20px; font-weight: bold; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.3); pointer-events: none; }
 
         #gallery-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 1000; overflow-y: auto; padding: 20px; box-sizing: border-box; text-align: left; }
-        .gallery-item { background: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: inline-block; width: 350px; margin-right: 20px; vertical-align: top;}
+        .gallery-item { position: relative; background: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; display: inline-block; width: 350px; margin-right: 20px; vertical-align: top; border: 4px solid transparent; transition: 0.3s; }
         .gallery-item h3 { margin: 0 0 10px 0; font-size: 18px; color: #333; text-align: center; }
         .gallery-item img { width: 100%; border: 1px solid #ccc; border-radius: 4px; background-color: white; }
+        
+        /* 🌟SOS・完了ステータスの装飾 */
+        @keyframes flashRed { 0% { box-shadow: 0 0 10px red; } 50% { box-shadow: 0 0 30px red; } 100% { box-shadow: 0 0 10px red; } }
+        .status-sos { animation: flashRed 1s infinite; border-color: red !important; }
+        .status-done { border-color: #28a745 !important; }
+        .status-badge { position: absolute; top: -15px; right: -15px; font-size: 24px; display: none; }
+        .status-sos .status-badge::before { content: "🆘"; display: block; }
+        .status-done .status-badge::before { content: "💮"; display: block; }
+        .status-sos .status-badge, .status-done .status-badge { display: block; }
+
     </style>
 </head>
 <body>
@@ -73,40 +89,43 @@
                 <option value="h">➡ 横書き</option>
                 <option value="v">⬇ 縦書き</option>
             </select>
-            
-            <select id="fontSizeSelect" onchange="changeFontSize()">
-                <option value="16">A 小</option>
-                <option value="24" selected>A 中</option>
-                <option value="36">A 大</option>
-                <option value="48">A 特大</option>
-            </select>
 
             <select id="tool" onchange="changeTool()">
                 <option value="select">👆 えらぶ</option>
                 <option value="draw">✎ ペン</option>
                 <option value="text">A もじ</option>
+                <option value="line">📏 直線</option>
+                <option value="rect">▭ 四角</option>
+                <option value="circle">◯ 丸</option>
                 <option value="pointer">🔴 ポインター</option>
             </select>
-            <input type="color" id="colorPicker" value="#000000" onchange="changeColor()">
-            <button class="btn-base btn-gray" onclick="undoMyLastAction()">↩ ひとつ戻る</button>
-            
+
+            <span style="display:inline-flex; align-items:center; gap:2px; margin:0 5px;">
+                <span class="color-btn active" style="background:#000000;" onclick="setColor('#000000', this)"></span>
+                <span class="color-btn" style="background:#dc3545;" onclick="setColor('#dc3545', this)"></span>
+                <span class="color-btn" style="background:#007bff;" onclick="setColor('#007bff', this)"></span>
+            </span>
+
             <span style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
             
             <span style="font-weight: bold; font-size: 13px; color: #333;">ページ:</span>
             <div id="page-list-container"><span id="page-list"></span></div>
             <button class="teacher-only btn-base btn-green" onclick="createMassPages()">👥 35人分作成</button>
-            <button class="btn-base btn-green" style="background-color: #20c997;" onclick="addPage()">＋1枚追加</button>
+            <button class="btn-base btn-green" style="background-color: #20c997;" onclick="addPage()">＋1枚</button>
 
             <span style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
-            <select id="stickyColor">
-                <option value="#fff9c4">きいろ</option>
-                <option value="#ffcc80">オレンジ</option>
-                <option value="#f8bbd0">ピンク</option>
-                <option value="#c8e6c9">みどり</option>
-                <option value="#bbdefb">あお</option>
-            </select>
+            
+            <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display:none;" onchange="handleImageUpload(event)">
+            <button class="btn-base btn-yellow" onclick="document.getElementById('cameraInput').click()">📸 カメラ</button>
             <button class="btn-base btn-yellow" onclick="addSticky('#fff9c4')">📝 ふせん</button>
-            <button class="btn-base btn-red" onclick="deleteSelected()">えらんで けす</button>
+            
+            <button class="btn-base btn-red" onclick="deleteSelected()">けす</button>
+            <button class="btn-base btn-gray" onclick="restoreDeleted()">🗑️ 戻す</button>
+
+            <span class="student-only" style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
+            <button class="student-only btn-base btn-green" onclick="sendStatus('done')">🙋‍♂️ できた！</button>
+            <button class="student-only btn-base btn-pink" onclick="sendStatus('sos')">🆘 先生よぶ</button>
+            <button class="student-only btn-base btn-gray" onclick="sendStatus('none')">取消</button>
 
             <span class="teacher-only" style="border-left: 2px solid #ccc; margin: 0 5px; height: 30px;"></span>
             <button class="teacher-only btn-base btn-orange" onclick="addStamp('💮')">💮</button>
@@ -117,12 +136,17 @@
             <button class="teacher-only btn-base btn-red" onclick="createBoardFrame('ポ')">ポ 枠</button>
             
             <button id="lockBoardBtn" class="teacher-only btn-base btn-red" onclick="toggleLock()">注目！</button>
+            
+            <button class="teacher-only btn-base btn-orange" onclick="forcePresentation()">📢 発表モード</button>
+            <button class="teacher-only btn-base btn-gray" onclick="cancelPresentation()">発表解除</button>
+
             <button class="btn-base btn-blue" onclick="openGallery()">👀 みんなのボード</button>
             <button class="teacher-only btn-base btn-purple" onclick="exportPDF()">PDF保存</button>
         </div>
 
         <div id="canvas-wrapper">
             <div id="lock-toast">🔒 先生が操作をロックしています（見るだけ）</div>
+            <div id="presentation-toast">📢 友達の発表を聞きましょう！</div>
             <canvas id="canvas" width="2000" height="1500"></canvas>
         </div>
     </div>
@@ -143,114 +167,24 @@
         let myRoom = '';
         let isTeacher = false;
         let isLocked = false;
+        let isPresentationMode = false;
         let remotePointers = {};
         let currentPage = 1;
         let maxPage = 1;
+        
+        let currentColor = '#000000'; // ペン・文字・図形の共通色
+        let trashBin = []; // ごみ箱
+        
+        // 図形描画用の変数
+        let isDrawingShape = false;
+        let origX, origY, currentShape;
 
         const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'relX', 'relY', 'isVerticalText', 'minW', 'minH'];
-
         const bgGrid = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 40 0 L 0 0 0 40" fill="none" stroke="%23e0e0e0" stroke-width="1"/></svg>';
         const bgRuled = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 39 0 L 39 40" fill="none" stroke="%23cccccc" stroke-width="1"/></svg>';
 
-        function changeFontSize() {
-            if(!canvas) return;
-            const size = parseInt(document.getElementById('fontSizeSelect').value, 10);
-            const activeObjects = canvas.getActiveObjects();
-            if (activeObjects.length > 0) {
-                activeObjects.forEach(obj => {
-                    if (obj.type === 'i-text' || obj.type === 'textbox') {
-                        obj.set('fontSize', size);
-                        if (obj.isVerticalText) obj.set('width', size + 10);
-                    }
-                });
-                canvas.renderAll();
-                emitCanvasData();
-            }
-        }
-
         function fixVerticalText(obj) {
             if (!obj || !obj.text || !obj.isVerticalText) return;
-            
-            // 手動改行（Enterキー）が押された時、新しい列を左に作る処理
-            if (obj.text.includes('\n')) {
-                const parts = obj.text.split('\n');
-                obj.set('text', parts[0]);
-                
-                let currentObj = obj;
-                for (let i = 1; i < parts.length; i++) {
-                    const offsetLeft = currentObj.fontSize + 16;
-                    const newObj = new fabric.Textbox(parts[i] || '', {
-                        left: currentObj.left - offsetLeft,
-                        top: currentObj.top,
-                        width: currentObj.fontSize + 10,
-                        fontSize: currentObj.fontSize,
-                        fill: currentObj.fill,
-                        author: currentObj.author,
-                        timestamp: new Date().toLocaleString(),
-                        splitByGrapheme: true,
-                        isVerticalText: true
-                    });
-                    
-                    if (currentObj.linkedId && currentObj.linkRole === 'text') {
-                        newObj.set({ linkedId: currentObj.linkedId, linkRole: 'text', relX: currentObj.relX - offsetLeft, relY: currentObj.relY });
-                    }
-                    
-                    setPermissions(newObj);
-                    canvas.add(newObj);
-                    newObj.on('changed', () => fixVerticalText(newObj));
-                    currentObj = newObj;
-                }
-                
-                canvas.setActiveObject(currentObj);
-                currentObj.enterEditing();
-                
-                let original = obj.text;
-                let fixed = original.replace(/、/g, '︑').replace(/。/g, '︒').replace(/「/g, '﹃').replace(/」/g, '﹄').replace(/ー/g, '丨');
-                if (original !== fixed) obj.set('text', fixed);
-                
-                if (canvas) canvas.renderAll();
-                emitCanvasData();
-                return;
-            }
-
-            // 下に長くなりすぎた場合の自動列替え処理
-            obj.initDimensions();
-            const MAX_HEIGHT = 400; // 枠の縦幅の目安
-            if (obj.height > MAX_HEIGHT && obj.text.length > 1) {
-                const lastChar = obj.text.slice(-1);
-                obj.set('text', obj.text.slice(0, -1)); 
-                
-                const offsetLeft = obj.fontSize + 16;
-                const newObj = new fabric.Textbox(lastChar, {
-                    left: obj.left - offsetLeft,
-                    top: obj.top,
-                    width: obj.fontSize + 10,
-                    fontSize: obj.fontSize,
-                    fill: obj.fill,
-                    author: obj.author,
-                    timestamp: new Date().toLocaleString(),
-                    splitByGrapheme: true,
-                    isVerticalText: true
-                });
-                
-                if (obj.linkedId && obj.linkRole === 'text') {
-                    newObj.set({ linkedId: obj.linkedId, linkRole: 'text', relX: obj.relX - offsetLeft, relY: obj.relY });
-                }
-                
-                setPermissions(newObj);
-                canvas.add(newObj);
-                newObj.on('changed', () => fixVerticalText(newObj));
-                
-                canvas.setActiveObject(newObj);
-                newObj.enterEditing();
-                newObj.selectionStart = 1;
-                newObj.selectionEnd = 1;
-                
-                if (canvas) canvas.renderAll();
-                emitCanvasData();
-                return;
-            }
-
             const original = obj.text;
             const fixed = original.replace(/、/g, '︑').replace(/。/g, '︒').replace(/「/g, '﹃').replace(/」/g, '﹄').replace(/ー/g, '丨');
             if (original !== fixed) { obj.set('text', fixed); if (canvas) canvas.renderAll(); }
@@ -272,12 +206,33 @@
             if (isTeacher) {
                 document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'inline-block');
             } else {
-                document.querySelectorAll('.teacher-only').forEach(el => el.style.display = 'none');
+                document.querySelectorAll('.student-only').forEach(el => el.style.display = 'inline-block');
             }
 
             renderPageButtons();
             initCanvas();
             changeBackground(true); 
+        }
+
+        // 🌟色変更の統一
+        function setColor(color, btnElement) {
+            currentColor = color;
+            document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
+            if(btnElement) btnElement.classList.add('active');
+            
+            if(canvas) {
+                canvas.freeDrawingBrush.color = color;
+                const activeObj = canvas.getActiveObject();
+                if(activeObj && (activeObj.type === 'i-text' || activeObj.type === 'textbox')) {
+                    activeObj.set('fill', color);
+                    canvas.renderAll();
+                    emitCanvasData();
+                } else if (activeObj && ['line', 'rect', 'circle'].includes(activeObj.type)) {
+                    activeObj.set('stroke', color);
+                    canvas.renderAll();
+                    emitCanvasData();
+                }
+            }
         }
 
         function renderPageButtons() {
@@ -287,13 +242,13 @@
                 const btn = document.createElement('button');
                 btn.className = `page-btn ${i === currentPage ? 'active' : ''}`;
                 btn.textContent = i;
-                btn.onclick = () => { if (i !== currentPage) switchPage(i); };
+                btn.onclick = () => { if (i !== currentPage && !isPresentationMode) switchPage(i); };
                 container.appendChild(btn);
             }
         }
 
         function switchPage(pageNumber) {
-            if (currentPage === pageNumber) return;
+            if (currentPage === pageNumber || isPresentationMode) return;
             emitCanvasData(); 
             currentPage = pageNumber;
             renderPageButtons();
@@ -301,12 +256,14 @@
                 isReceiving = true;
                 canvas.clear();
                 changeBackground(true);
+                trashBin = []; // ページ移動でごみ箱リセット
                 isReceiving = false;
             }
             socket.emit('switch-page', pageNumber);
         }
 
         function addPage() {
+            if (isPresentationMode) return;
             maxPage++;
             socket.emit('set-max-page', maxPage);
             switchPage(maxPage);
@@ -325,7 +282,7 @@
         });
 
         function setPermissions(obj) {
-            if (isLocked && !isTeacher) {
+            if ((isLocked || isPresentationMode) && !isTeacher) {
                 obj.set({ selectable: false, evented: false });
                 return;
             }
@@ -340,16 +297,12 @@
         function changeTool() {
             if(!canvas) return;
             const tool = document.getElementById('tool').value;
-            if (isLocked && !isTeacher) {
+            if ((isLocked || isPresentationMode) && !isTeacher) {
                 canvas.isDrawingMode = false;
                 return;
             }
             canvas.isDrawingMode = (tool === 'draw');
-        }
-
-        function changeColor() {
-            if(!canvas) return;
-            canvas.freeDrawingBrush.color = document.getElementById('colorPicker').value;
+            // Selection setting handled in mousedown
         }
 
         function changeBackground(skipEmit = false) {
@@ -366,29 +319,19 @@
 
         function setupLink(frame, text) {
             frame.off('moving'); text.off('moving'); text.off('changed');
-            
             frame.on('moving', () => { text.set({ left: frame.left + frame.relX, top: frame.top + frame.relY }); text.setCoords(); });
             text.on('moving', () => { frame.set({ left: text.left - frame.relX, top: text.top - frame.relY }); frame.setCoords(); });
-            
             text.on('changed', () => {
-                fixVerticalText(text);
-
+                fixVerticalText(text); 
                 const rect = frame.getObjects()[0]; 
-                const minW = frame.minW || 0;
-                const minH = frame.minH || 0;
-                
-                const newW = Math.max(minW, text.width + 60);
-                const newH = Math.max(minH, text.height + 60);
-                
+                const minW = frame.minW || 0; const minH = frame.minH || 0;
+                const newW = Math.max(minW, text.width + 60); const newH = Math.max(minH, text.height + 60);
                 if (rect.width !== newW || rect.height !== newH) {
                     rect.set({ width: newW, height: newH });
-                    const oldLeft = frame.left;
-                    const oldTop = frame.top;
-                    
+                    const oldLeft = frame.left; const oldTop = frame.top;
                     frame.addWithUpdate(); 
                     frame.set({ left: oldLeft, top: oldTop }); 
                     frame.setCoords();
-                    
                     canvas.renderAll();
                     emitCanvasData();
                 }
@@ -402,16 +345,14 @@
         }
 
         function createBoardFrame(type) {
-            if (!canvas || (isLocked && !isTeacher)) return;
+            if (!canvas || ((isLocked || isPresentationMode) && !isTeacher)) return;
             const isVertical = (document.getElementById('textDirection').value === 'v');
             const isBlue = (type === '学');
             const color = isBlue ? '#1e88e5' : '#dc3545';
             const offset = getScrollOffset();
 
-            const rw = isVertical ? 120 : 450;
-            const rh = isVertical ? 450 : 120;
-            const bx = isVertical ? rw - 20 : -20;
-            const by = -20;
+            const rw = isVertical ? 120 : 450; const rh = isVertical ? 450 : 120;
+            const bx = isVertical ? rw - 20 : -20; const by = -20;
 
             const circle = new fabric.Circle({ radius: 20, fill: 'white', stroke: color, strokeWidth: 4, originX: 'center', originY: 'center' });
             const textBadge = new fabric.Text(type, { fontSize: 24, fill: color, fontWeight: 'bold', originX: 'center', originY: 'center' });
@@ -420,9 +361,7 @@
 
             const frameGroup = new fabric.Group([rect, badge], { left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
 
-            const tx = offset.x + (isVertical ? 45 : 40);
-            const ty = offset.y + (isVertical ? 40 : 30);
-            
+            const tx = offset.x + (isVertical ? 45 : 40); const ty = offset.y + (isVertical ? 40 : 30);
             let placeholder = '入力...';
             if(type === '学') placeholder = '問題を入力...';
             if(type === 'ま') placeholder = 'まとめを入力...';
@@ -431,26 +370,20 @@
             if (isVertical) placeholder = placeholder.replace('を', 'を\n');
             
             let innerText;
-            const sizeEl = document.getElementById('fontSizeSelect');
-            const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 24;
-
             if (isVertical) {
-                innerText = new fabric.Textbox(placeholder, { left: tx, top: ty, fontSize: fontSize, fill: '#333', author: myName, width: fontSize + 10, splitByGrapheme: true, isVerticalText: true });
+                innerText = new fabric.Textbox(placeholder, { left: tx, top: ty, fontSize: 24, fill: '#333', author: myName, width: 30, splitByGrapheme: true, isVerticalText: true });
                 innerText.on('changed', () => fixVerticalText(innerText));
                 fixVerticalText(innerText);
             } else {
-                innerText = new fabric.IText(placeholder.replace('\n',''), { left: tx, top: ty, fontSize: fontSize, fill: '#333', author: myName });
+                innerText = new fabric.IText(placeholder.replace('\n',''), { left: tx, top: ty, fontSize: 24, fill: '#333', author: myName });
             }
 
             const linkedId = Date.now().toString();
-            const relX = tx - offset.x;
-            const relY = ty - offset.y;
-
+            const relX = tx - offset.x; const relY = ty - offset.y;
             frameGroup.set({ linkedId: linkedId, linkRole: 'frame', relX: relX, relY: relY, minW: rw, minH: rh });
             innerText.set({ linkedId: linkedId, linkRole: 'text', relX: relX, relY: relY });
 
-            setPermissions(frameGroup);
-            setPermissions(innerText);
+            setPermissions(frameGroup); setPermissions(innerText);
             setupLink(frameGroup, innerText);
             
             canvas.add(frameGroup, innerText);
@@ -460,74 +393,41 @@
         }
 
         function addStamp(emoji) {
-            if (!canvas || (isLocked && !isTeacher)) return;
+            if (!canvas || ((isLocked || isPresentationMode) && !isTeacher)) return;
             const offset = getScrollOffset();
             const stamp = new fabric.Text(emoji, { left: offset.x + 100, top: offset.y + 100, fontSize: 60, author: myName, timestamp: new Date().toLocaleString() });
-            setPermissions(stamp);
-            canvas.add(stamp);
-            canvas.setActiveObject(stamp);
+            setPermissions(stamp); canvas.add(stamp); canvas.setActiveObject(stamp);
             emitCanvasData();
         }
 
         function addSticky(color = '#fff9c4') {
-            if (!canvas || (isLocked && !isTeacher)) return;
+            if (!canvas || ((isLocked || isPresentationMode) && !isTeacher)) return;
             const isVertical = (document.getElementById('textDirection').value === 'v');
             const offset = getScrollOffset();
-            const sizeEl = document.getElementById('fontSizeSelect');
-            const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 22;
-
             let stickyText;
-            const commonOpts = { left: offset.x + 50, top: offset.y + 50, fontSize: fontSize, padding: 15, backgroundColor: color, fill: '#333', author: myName, timestamp: new Date().toLocaleString(), shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 }) };
+            const commonOpts = { left: offset.x + 50, top: offset.y + 50, fontSize: 22, padding: 15, backgroundColor: color, fill: currentColor, author: myName, timestamp: new Date().toLocaleString(), shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.3)', blur: 5, offsetX: 3, offsetY: 3 }) };
             
             if (isVertical) {
-                commonOpts.width = fontSize + 10;
-                commonOpts.splitByGrapheme = true;
-                commonOpts.isVerticalText = true;
+                commonOpts.width = 30; commonOpts.splitByGrapheme = true; commonOpts.isVerticalText = true;
                 stickyText = new fabric.Textbox('ここに入力', commonOpts);
                 stickyText.on('changed', () => fixVerticalText(stickyText));
                 fixVerticalText(stickyText);
             } else {
                 stickyText = new fabric.IText('ここに入力', commonOpts);
             }
-
-            setPermissions(stickyText);
-            canvas.add(stickyText);
-            canvas.setActiveObject(stickyText);
-            stickyText.enterEditing();
-            stickyText.selectAll();
-            
-            document.getElementById('tool').value = 'select';
-            canvas.isDrawingMode = false;
+            setPermissions(stickyText); canvas.add(stickyText); canvas.setActiveObject(stickyText);
+            stickyText.enterEditing(); stickyText.selectAll();
+            document.getElementById('tool').value = 'select'; canvas.isDrawingMode = false;
             emitCanvasData();
         }
 
-        function undoMyLastAction() {
-            if (!canvas || (isLocked && !isTeacher)) return;
-            const objects = canvas.getObjects();
-            for (let i = objects.length - 1; i >= 0; i--) {
-                if (objects[i].author === myName) {
-                    const linkedId = objects[i].linkedId;
-                    if (linkedId) {
-                        const pair = objects.filter(o => o.linkedId === linkedId);
-                        pair.forEach(p => canvas.remove(p));
-                    } else {
-                        canvas.remove(objects[i]);
-                    }
-                    canvas.discardActiveObject();
-                    emitCanvasData();
-                    return;
-                }
-            }
-        }
-
+        // 🌟ごみ箱機能
         function deleteSelected() {
-            if (!canvas || (isLocked && !isTeacher)) return;
+            if (!canvas || ((isLocked || isPresentationMode) && !isTeacher)) return;
             const activeObjects = canvas.getActiveObjects();
-            if (activeObjects.length === 0) {
-                alert('消したいものを「👆えらぶ」ツールで選んでから押してね！'); return;
-            }
+            if (activeObjects.length === 0) { alert('消したいものを「👆えらぶ」ツールで選んでから押してね！'); return; }
             
-            let deletedSomething = false;
+            let removedItems = [];
             let notYours = false;
             const idsToDelete = activeObjects.map(o => o.linkedId).filter(id => id);
 
@@ -536,28 +436,63 @@
                 const isLinked = idsToDelete.includes(obj.linkedId);
                 if (isSelected || isLinked) {
                     if (isTeacher || obj.author === myName) {
+                        removedItems.push(obj);
                         canvas.remove(obj);
-                        deletedSomething = true;
                     } else if (isSelected) {
                         notYours = true;
                     }
                 }
             });
 
-            if (deletedSomething) { canvas.discardActiveObject(); emitCanvasData(); }
+            if (removedItems.length > 0) {
+                trashBin.push(removedItems);
+                if(trashBin.length > 10) trashBin.shift(); // 最大10回分まで記憶
+                canvas.discardActiveObject(); 
+                emitCanvasData(); 
+            }
             if (notYours) alert('ほかの人がかいたものは、けせません！');
         }
 
+        function restoreDeleted() {
+            if (!canvas || ((isLocked || isPresentationMode) && !isTeacher)) return;
+            if (trashBin.length === 0) return alert('もどすものがありません！');
+            const lastRemoved = trashBin.pop();
+            lastRemoved.forEach(obj => {
+                setPermissions(obj);
+                canvas.add(obj);
+            });
+            emitCanvasData();
+        }
+
         function clearAll() {
-            if (!canvas) return;
+            if (!canvas || ((isLocked || isPresentationMode) && !isTeacher)) return;
             if (confirm(`ほんとうに ページ ${currentPage} を ぜんぶ けしますか？`)) {
                 isReceiving = true;
                 canvas.clear();
                 changeBackground(true);
+                trashBin = [];
                 isReceiving = false;
                 socket.emit('clear-canvas'); 
                 emitCanvasData(); 
             }
+        }
+
+        // 🌟ステータス（できた/SOS）送信
+        function sendStatus(type) {
+            socket.emit('student-status', { page: currentPage, status: type });
+            const msg = type === 'done' ? '✅ 完了を知らせました！' : type === 'sos' ? '🆘 先生を呼びました！' : '状態をリセットしました';
+            alert(msg);
+        }
+
+        // 🌟発表モード
+        function forcePresentation() {
+            if(confirm(`今のページ（${currentPage}ページ）を全員に注目させますか？`)) {
+                socket.emit('force-presentation', currentPage);
+            }
+        }
+        function cancelPresentation() {
+            socket.emit('cancel-presentation');
+            alert('発表モードを解除しました');
         }
 
         function toggleLock() {
@@ -573,12 +508,10 @@
             if (typeof window.jspdf === 'undefined') return alert('PDF作成プログラムが読み込まれていません。');
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({ orientation: 'landscape', format: 'a3' });
-            
             canvas.renderAll();
             const imgData = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-            
             pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
             pdf.save(`ボード記録_ページ${currentPage}_${myRoom}.pdf`);
         }
@@ -591,11 +524,40 @@
             socket.emit('canvas-data', { page: currentPage, canvas: json });
         }
 
+        // 🌟カメラ画像の直接挿入
+        function handleImageUpload(e) {
+            if (isLocked && !isTeacher) return;
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const imgObj = new Image();
+                imgObj.src = event.target.result;
+                imgObj.onload = () => {
+                    const MAX_WIDTH = 800; let scale = 1;
+                    if (imgObj.width > MAX_WIDTH) scale = MAX_WIDTH / imgObj.width;
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = imgObj.width * scale; tempCanvas.height = imgObj.height * scale;
+                    const ctx = tempCanvas.getContext('2d');
+                    ctx.drawImage(imgObj, 0, 0, tempCanvas.width, tempCanvas.height);
+                    const compressedDataURL = tempCanvas.toDataURL('image/jpeg', 0.7);
+                    
+                    fabric.Image.fromURL(compressedDataURL, (image) => {
+                        const offset = getScrollOffset(); 
+                        image.set({ left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
+                        if (image.width > 600) image.scaleToWidth(600);
+                        setPermissions(image); canvas.add(image); canvas.setActiveObject(image);
+                        document.getElementById('tool').value = 'select'; canvas.isDrawingMode = false;
+                        emitCanvasData();
+                    });
+                }
+            };
+            reader.readAsDataURL(file);
+            e.target.value = ''; // 連続撮影のためにリセット
+        }
+
         function initCanvas() {
-            canvas = new fabric.Canvas('canvas', { 
-                isDrawingMode: false,
-                preserveObjectStacking: true
-            });
+            canvas = new fabric.Canvas('canvas', { isDrawingMode: false, preserveObjectStacking: true });
             document.getElementById('tool').value = 'select';
 
             canvas.on('mouse:move', (options) => {
@@ -604,86 +566,97 @@
                     const pointer = canvas.getPointer(options.e);
                     socket.emit('pointer-move', { author: myName, page: currentPage, x: pointer.x, y: pointer.y });
                 }
+                // 図形の描画中
+                if (isDrawingShape && currentShape) {
+                    let pointer = canvas.getPointer(options.e);
+                    if (tool === 'line') {
+                        currentShape.set({ x2: pointer.x, y2: pointer.y });
+                    } else if (tool === 'rect') {
+                        currentShape.set({ width: Math.abs(origX - pointer.x), height: Math.abs(origY - pointer.y) });
+                        if (origX > pointer.x) currentShape.set({ left: pointer.x });
+                        if (origY > pointer.y) currentShape.set({ top: pointer.y });
+                    } else if (tool === 'circle') {
+                        let radius = Math.abs(origX - pointer.x) / 2;
+                        currentShape.set({ radius: radius });
+                        if (origX > pointer.x) currentShape.set({ left: pointer.x });
+                        if (origY > pointer.y) currentShape.set({ top: pointer.y });
+                    }
+                    canvas.renderAll();
+                }
             });
 
             canvas.on('mouse:down', (options) => {
-                if (isLocked && !isTeacher) return;
+                if ((isLocked || isPresentationMode) && !isTeacher) return;
                 const tool = document.getElementById('tool').value;
-                if (tool === 'text' && !canvas.isDrawingMode) {
+                const pointer = canvas.getPointer(options.e);
+                
+                if (['line', 'rect', 'circle'].includes(tool)) {
+                    isDrawingShape = true;
+                    origX = pointer.x; origY = pointer.y;
+                    if (tool === 'line') {
+                        currentShape = new fabric.Line([origX, origY, origX, origY], { stroke: currentColor, strokeWidth: 4, author: myName, timestamp: new Date().toLocaleString() });
+                    } else if (tool === 'rect') {
+                        currentShape = new fabric.Rect({ left: origX, top: origY, width: 0, height: 0, fill: 'transparent', stroke: currentColor, strokeWidth: 4, author: myName, timestamp: new Date().toLocaleString() });
+                    } else if (tool === 'circle') {
+                        currentShape = new fabric.Circle({ left: origX, top: origY, radius: 0, fill: 'transparent', stroke: currentColor, strokeWidth: 4, author: myName, timestamp: new Date().toLocaleString() });
+                    }
+                    setPermissions(currentShape); canvas.add(currentShape);
+                } else if (tool === 'text' && !canvas.isDrawingMode) {
                     const isVertical = (document.getElementById('textDirection').value === 'v');
-                    const pointer = canvas.getPointer(options.e);
-                    const color = document.getElementById('colorPicker').value;
-                    const sizeEl = document.getElementById('fontSizeSelect');
-                    const fontSize = sizeEl ? parseInt(sizeEl.value, 10) : 24;
-                    
-                    const opts = { left: pointer.x, top: pointer.y, fill: color, fontSize: fontSize, author: myName, timestamp: new Date().toLocaleString() };
-                    
+                    const opts = { left: pointer.x, top: pointer.y, fill: currentColor, fontSize: 24, author: myName, timestamp: new Date().toLocaleString() };
                     let textObj;
                     if (isVertical) {
-                        opts.splitByGrapheme = true;
-                        opts.width = fontSize + 10;
-                        opts.isVerticalText = true;
+                        opts.splitByGrapheme = true; opts.width = 30; opts.isVerticalText = true;
                         textObj = new fabric.Textbox('ここに入力', opts);
-                        textObj.on('changed', () => fixVerticalText(textObj));
-                        fixVerticalText(textObj);
+                        textObj.on('changed', () => fixVerticalText(textObj)); fixVerticalText(textObj);
                     } else {
                         textObj = new fabric.IText('ここに入力', opts);
                     }
+                    setPermissions(textObj); canvas.add(textObj); canvas.setActiveObject(textObj);
+                    textObj.enterEditing(); textObj.selectAll(); emitCanvasData();
+                    document.getElementById('tool').value = 'select'; canvas.isDrawingMode = false;
+                }
+            });
 
-                    setPermissions(textObj);
-                    canvas.add(textObj);
-                    canvas.setActiveObject(textObj);
-                    textObj.enterEditing();
-                    textObj.selectAll();
+            canvas.on('mouse:up', () => {
+                if (isDrawingShape && currentShape) {
+                    isDrawingShape = false;
+                    currentShape.setCoords();
                     emitCanvasData();
-                    
-                    document.getElementById('tool').value = 'select'; 
-                    canvas.isDrawingMode = false;
+                    document.getElementById('tool').value = 'select';
+                    currentShape = null;
                 }
             });
 
             canvas.on('path:created', (options) => {
                 options.path.set({ author: myName, timestamp: new Date().toLocaleString() });
-                setPermissions(options.path);
-                emitCanvasData();
+                setPermissions(options.path); emitCanvasData();
             });
 
             canvas.on('object:modified', () => emitCanvasData());
 
             window.addEventListener('paste', (e) => {
-                if (isLocked && !isTeacher) return;
+                if ((isLocked || isPresentationMode) && !isTeacher) return;
                 const items = (e.clipboardData || e.originalEvent.clipboardData).items;
                 for (let index in items) {
                     const item = items[index];
                     if (item.kind === 'file' && item.type.indexOf('image/') !== -1) {
-                        const blob = item.getAsFile();
-                        const reader = new FileReader();
+                        const blob = item.getAsFile(); const reader = new FileReader();
                         reader.onload = (event) => {
-                            const imgObj = new Image();
-                            imgObj.src = event.target.result;
+                            const imgObj = new Image(); imgObj.src = event.target.result;
                             imgObj.onload = () => {
-                                const MAX_WIDTH = 800;
-                                let scale = 1;
+                                const MAX_WIDTH = 800; let scale = 1;
                                 if (imgObj.width > MAX_WIDTH) scale = MAX_WIDTH / imgObj.width;
-                                
                                 const tempCanvas = document.createElement('canvas');
-                                tempCanvas.width = imgObj.width * scale;
-                                tempCanvas.height = imgObj.height * scale;
-                                const ctx = tempCanvas.getContext('2d');
-                                ctx.drawImage(imgObj, 0, 0, tempCanvas.width, tempCanvas.height);
-                                
+                                tempCanvas.width = imgObj.width * scale; tempCanvas.height = imgObj.height * scale;
+                                const ctx = tempCanvas.getContext('2d'); ctx.drawImage(imgObj, 0, 0, tempCanvas.width, tempCanvas.height);
                                 const compressedDataURL = tempCanvas.toDataURL('image/jpeg', 0.7);
-                                
                                 fabric.Image.fromURL(compressedDataURL, (image) => {
                                     const offset = getScrollOffset(); 
                                     image.set({ left: offset.x, top: offset.y, author: myName, timestamp: new Date().toLocaleString() });
                                     if (image.width > 600) image.scaleToWidth(600);
-                                    setPermissions(image);
-                                    canvas.add(image);
-                                    canvas.setActiveObject(image);
-                                    document.getElementById('tool').value = 'select';
-                                    canvas.isDrawingMode = false;
-                                    emitCanvasData();
+                                    setPermissions(image); canvas.add(image); canvas.setActiveObject(image);
+                                    document.getElementById('tool').value = 'select'; canvas.isDrawingMode = false; emitCanvasData();
                                 });
                             }
                         };
@@ -702,11 +675,14 @@
         const offscreenCanvas = document.createElement('canvas');
         const offscreen = new fabric.StaticCanvas(offscreenCanvas, { width: 2000, height: 1500, backgroundColor: '#ffffff' });
 
-        socket.on('all-pages-data', (pagesData) => {
+        socket.on('all-pages-data', (data) => {
             const grid = document.getElementById('gallery-grid');
             grid.innerHTML = '';
             
+            const pagesData = data.pages || {};
+            const statuses = data.statuses || {};
             const pageNumbers = Object.keys(pagesData).sort((a,b) => parseInt(a) - parseInt(b));
+            
             if (pageNumbers.length === 0) {
                 grid.innerHTML = '<p style="color:white; font-size:20px;">まだデータがありません</p>';
                 return;
@@ -717,9 +693,14 @@
                 if (i >= pageNumbers.length) return;
                 const pNum = pageNumbers[i];
                 const rawData = pagesData[pNum];
+                const status = statuses[pNum] || 'none';
                 
+                let statusClass = '';
+                if (status === 'done') statusClass = 'status-done';
+                if (status === 'sos') statusClass = 'status-sos';
+
                 if (!rawData || !rawData.objects || rawData.objects.length === 0) {
-                    grid.innerHTML += `<div class="gallery-item" onclick="switchPage(${pNum}); document.getElementById('gallery-modal').style.display='none'" style="cursor:pointer;"><h3>📄 ページ ${pNum}</h3><p style="text-align:center; padding:50px 0;">（白紙です）</p></div>`;
+                    grid.innerHTML += `<div class="gallery-item ${statusClass}" onclick="switchPage(${pNum}); document.getElementById('gallery-modal').style.display='none'" style="cursor:pointer;"><div class="status-badge"></div><h3>📄 ページ ${pNum}</h3><p style="text-align:center; padding:50px 0;">（白紙です）</p></div>`;
                     i++; renderNextThumb(); return;
                 }
 
@@ -731,11 +712,39 @@
                 offscreen.loadFromJSON(rawData, () => {
                     offscreen.renderAll();
                     const imgUrl = offscreen.toDataURL({ format: 'png' }); 
-                    grid.innerHTML += `<div class="gallery-item" onclick="switchPage(${pNum}); document.getElementById('gallery-modal').style.display='none'" style="cursor:pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"><h3>📄 ページ ${pNum}</h3><img src="${imgUrl}"></div>`;
+                    grid.innerHTML += `<div class="gallery-item ${statusClass}" onclick="switchPage(${pNum}); document.getElementById('gallery-modal').style.display='none'" style="cursor:pointer; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"><div class="status-badge"></div><h3>📄 ページ ${pNum}</h3><img src="${imgUrl}"></div>`;
                     i++; renderNextThumb();
                 });
             }
             renderNextThumb();
+        });
+
+        // 🌟発表モード受信処理
+        socket.on('force-presentation', (page) => {
+            if (!isTeacher) {
+                isPresentationMode = true;
+                switchPage(page);
+                document.getElementById('presentation-toast').style.display = 'block';
+                if(canvas) {
+                    canvas.discardActiveObject();
+                    canvas.isDrawingMode = false;
+                    canvas.getObjects().forEach(obj => setPermissions(obj));
+                    canvas.renderAll();
+                }
+            }
+        });
+
+        socket.on('cancel-presentation', () => {
+            if (!isTeacher) {
+                isPresentationMode = false;
+                document.getElementById('presentation-toast').style.display = 'none';
+                if(canvas) {
+                    const toolEl = document.getElementById('tool');
+                    if (toolEl && toolEl.value === 'draw') canvas.isDrawingMode = true;
+                    canvas.getObjects().forEach(obj => setPermissions(obj));
+                    canvas.renderAll();
+                }
+            }
         });
 
         socket.on('canvas-data', (data) => {
@@ -747,11 +756,7 @@
             const canvasRaw = data.canvas || data;
             
             if (!canvasRaw || !canvasRaw.objects || canvasRaw.objects.length === 0) {
-                 if(canvas) { 
-                     canvas.clear(); 
-                     document.getElementById('bgSelect').value = 'white';
-                     changeBackground(true); 
-                 }
+                 if(canvas) { canvas.clear(); document.getElementById('bgSelect').value = 'white'; changeBackground(true); }
                  isReceiving = false; return;
             }
 
@@ -782,6 +787,10 @@
             }
         });
 
+        socket.on('student-status', (data) => {
+            // 受信時にギャラリーが開いていれば更新処理が必要だが、今回は開き直す前提なので通知のみでも可
+        });
+
         socket.on('pointer-move', (data) => {
             if(!canvas || data.page !== currentPage) return;
             if (!remotePointers[data.author]) {
@@ -799,13 +808,7 @@
         });
 
         socket.on('clear-canvas-local', () => { 
-            if(canvas) { 
-                isReceiving = true;
-                canvas.clear(); 
-                changeBackground(true); 
-                canvas.renderAll(); 
-                isReceiving = false;
-            }
+            if(canvas) { isReceiving = true; canvas.clear(); changeBackground(true); canvas.renderAll(); isReceiving = false; }
         });
 
         socket.on('lock-board', (lockedState) => {
@@ -814,19 +817,13 @@
                 const toast = document.getElementById('lock-toast');
                 if (isLocked) {
                     if (toast) toast.style.display = 'block';
-                    if(canvas) { 
-                        canvas.discardActiveObject(); 
-                        canvas.isDrawingMode = false; 
-                        canvas.getObjects().forEach(obj => setPermissions(obj));
-                        canvas.renderAll();
-                    }
+                    if(canvas) { canvas.discardActiveObject(); canvas.isDrawingMode = false; canvas.getObjects().forEach(obj => setPermissions(obj)); canvas.renderAll(); }
                 } else {
                     if (toast) toast.style.display = 'none';
                     if(canvas) {
                         const toolEl = document.getElementById('tool');
                         if (toolEl && toolEl.value === 'draw') canvas.isDrawingMode = true;
-                        canvas.getObjects().forEach(obj => setPermissions(obj));
-                        canvas.renderAll();
+                        canvas.getObjects().forEach(obj => setPermissions(obj)); canvas.renderAll();
                     }
                 }
             }

@@ -15,7 +15,7 @@ io.on('connection', (socket) => {
         socket.join(roomName);
         socket.roomName = roomName;
         if (!roomHistory[roomName]) {
-            roomHistory[roomName] = { maxPage: 1, pages: {} };
+            roomHistory[roomName] = { maxPage: 1, pages: {}, statuses: {} };
         }
         socket.emit('canvas-data', { page: 1, canvas: roomHistory[roomName].pages[1] || null });
         socket.emit('max-page-updated', roomHistory[roomName].maxPage);
@@ -30,7 +30,7 @@ io.on('connection', (socket) => {
     socket.on('canvas-data', (data) => {
         if (socket.roomName) {
             const page = data.page || 1;
-            if (!roomHistory[socket.roomName]) roomHistory[socket.roomName] = { maxPage: 1, pages: {} };
+            if (!roomHistory[socket.roomName]) roomHistory[socket.roomName] = { maxPage: 1, pages: {}, statuses: {} };
             roomHistory[socket.roomName].pages[page] = data.canvas;
             socket.to(socket.roomName).emit('canvas-data', data);
         }
@@ -43,10 +43,31 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 🌟 追加：全員のページとSOS・完了ステータスを一括送信
     socket.on('request-all-pages', () => {
         if (socket.roomName && roomHistory[socket.roomName]) {
-            socket.emit('all-pages-data', roomHistory[socket.roomName].pages);
+            socket.emit('all-pages-data', {
+                pages: roomHistory[socket.roomName].pages,
+                statuses: roomHistory[socket.roomName].statuses
+            });
         }
+    });
+
+    // 🌟 追加：児童の「できた」「SOS」ステータスを受信して記憶・共有
+    socket.on('student-status', (data) => {
+        if (socket.roomName && roomHistory[socket.roomName]) {
+            roomHistory[socket.roomName].statuses[data.page] = data.status;
+            io.to(socket.roomName).emit('student-status', data);
+        }
+    });
+
+    // 🌟 追加：先生の「発表モード」を全員に強制適用
+    socket.on('force-presentation', (page) => {
+        if (socket.roomName) io.to(socket.roomName).emit('force-presentation', page);
+    });
+    
+    socket.on('cancel-presentation', () => {
+        if (socket.roomName) io.to(socket.roomName).emit('cancel-presentation');
     });
 
     socket.on('clear-canvas', () => {
