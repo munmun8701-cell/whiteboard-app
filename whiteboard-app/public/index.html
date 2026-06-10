@@ -181,10 +181,9 @@
 
         function getEl(id) { return document.getElementById(id); }
 
-        // 🌟通信に必要な特別な属性（編集中なまえタグ用などを追加）
+        // 🌟通信項目
         const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'relX', 'relY', 'isVerticalText', 'minW', 'minH', 'objectId', 'editorName'];
 
-        // 🌟オブジェクトに絶対に被らない専用IDをつける
         function generateId() {
             return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
         }
@@ -192,7 +191,6 @@
         const bgGrid = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 40 0 L 0 0 0 40" fill="none" stroke="%23e0e0e0" stroke-width="1"/></svg>';
         const bgRuled = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 39 0 L 39 40" fill="none" stroke="%23cccccc" stroke-width="1"/></svg>';
 
-        // 🌟先生が作成した素晴らしい改行・リサイズ機能！
         function changeFontSize() {
             if(!canvas) return;
             const sizeEl = getEl('fontSizeSelect');
@@ -203,7 +201,7 @@
                     if (obj.type === 'i-text' || obj.type === 'textbox') {
                         obj.set('fontSize', size);
                         if (obj.isVerticalText) obj.set('width', size + 10);
-                        emitObjectModify(obj); // 🌟部分同期で反映！
+                        emitObjectModify(obj);
                     }
                 });
                 canvas.renderAll();
@@ -230,12 +228,12 @@
                         timestamp: new Date().toLocaleString(),
                         splitByGrapheme: true,
                         isVerticalText: true,
-                        objectId: generateId() // 🌟ここにもID付与！
+                        objectId: generateId()
                     });
                     setPermissions(newObj);
                     canvas.add(newObj);
                     newObj.on('changed', () => { fixVerticalText(newObj); emitObjectModify(newObj); });
-                    emitObjectAdd(newObj); // 🌟追加された列を同期！
+                    emitObjectAdd(newObj); 
                     currentObj = newObj;
                 }
                 
@@ -289,17 +287,11 @@
             if (original !== fixed) { obj.set('text', fixed); if (canvas) canvas.renderAll(); }
         }
 
-        // 🌟 データの消失を防ぐ、超軽量な【部分同期システム】
+        // 🌟 バグを消し去る【部分同期システム】
         function getFullJson() {
             return { bg: getEl('bgSelect').value, objects: canvas.getObjects().filter(o => o.author).map(o => o.toObject(customProps)) };
         }
 
-        function emitFullCanvas() {
-            if (isReceiving || !canvas) return;
-            socket.emit('canvas-data', { page: currentPage, canvas: getFullJson() });
-        }
-
-        // 誰かが動かした時、その図形「だけ」を通信する魔法！
         function emitObjectModify(obj) {
             if (isReceiving || !obj.objectId) return;
             socket.emit('canvas-data', {
@@ -326,9 +318,9 @@
             });
         }
 
-        // 🌟 誰が触っているか見せるロック機能
+        // 🌟 誰が触っているか表示する
         function broadcastLock(objects, isLocked) {
-            if (!objects) return;
+            if (!objects || isReceiving) return;
             objects.forEach(obj => {
                 if (!obj.objectId) return;
                 obj.set('editorName', isLocked ? myName : null);
@@ -397,7 +389,7 @@
 
         function switchPage(pageNumber) {
             if (currentPage === pageNumber || isPresentationMode) return;
-            emitFullCanvas(); 
+            // ページ移動時はサーバーに最新状態がすでにあるため、全体の再送信(emitFullCanvas)を廃止！
             currentPage = pageNumber;
             renderPageButtons();
             if(canvas) {
@@ -462,7 +454,12 @@
             const bgType = getEl('bgSelect').value;
             const callback = () => {
                 canvas.renderAll();
-                if (!skipEmit && !isReceiving) emitFullCanvas();
+                if (!skipEmit && !isReceiving) {
+                    socket.emit('canvas-data', {
+                        page: currentPage, canvas: getFullJson(),
+                        partialUpdate: { action: 'background', bg: bgType }
+                    });
+                }
             };
             if (bgType === 'white') canvas.setBackgroundColor('#ffffff', callback);
             else if (bgType === 'grid') canvas.setBackgroundColor({ source: bgGrid, repeat: 'repeat' }, callback);
@@ -538,6 +535,7 @@
                 fixVerticalText(innerText);
             } else {
                 innerText = new fabric.IText(placeholder.replace('\n',''), { left: tx, top: ty, fontSize: fontSize, fill: '#333', author: myName, objectId: generateId() });
+                innerText.on('changed', () => emitObjectModify(innerText));
             }
 
             const linkedId = Date.now().toString();
@@ -582,6 +580,7 @@
                 fixVerticalText(stickyText);
             } else {
                 stickyText = new fabric.IText('ここに入力', commonOpts);
+                stickyText.on('changed', () => emitObjectModify(stickyText));
             }
 
             setPermissions(stickyText); canvas.add(stickyText); canvas.setActiveObject(stickyText);
@@ -641,7 +640,10 @@
                 trashBin = [];
                 isReceiving = false;
                 socket.emit('clear-canvas'); 
-                emitFullCanvas(); 
+                socket.emit('canvas-data', {
+                    page: currentPage, canvas: getFullJson(),
+                    partialUpdate: { action: 'clear' }
+                });
             }
         }
 
@@ -665,7 +667,7 @@
             isLocked = !isLocked;
             socket.emit('lock-board', isLocked);
             const btn = getEl('lockBoardBtn');
-            btn.textContent = isLocked ? 'ロック解除' : '注目！(ロック)';
+            btn.textContent = isLocked ? 'ロック解除' : '注目！';
             btn.style.backgroundColor = isLocked ? '#28a745' : '#dc3545';
         }
 
@@ -720,7 +722,10 @@
             getEl('addStickyBtn')?.addEventListener('click', addSticky);
             
             getEl('addGakuBtn')?.addEventListener('click', () => createBoardFrame('学'));
+            getEl('addMeBtn')?.addEventListener('click', () => createBoardFrame('め'));
             getEl('addMaBtn')?.addEventListener('click', () => createBoardFrame('ま'));
+            getEl('addPoBtn')?.addEventListener('click', () => createBoardFrame('ポ'));
+            
             getEl('lockBoardBtn')?.addEventListener('click', toggleLock);
             getEl('viewGalleryBtn')?.addEventListener('click', openGallery);
             getEl('closeGalleryBtn')?.addEventListener('click', () => {
@@ -812,25 +817,32 @@
                 setPermissions(options.path); emitObjectAdd(options.path);
             });
 
+            // 🌟 図形を動かした時に、ちゃんと他の人にも共有する
             canvas.on('object:modified', (e) => {
                 if (e.target.type === 'activeSelection') {
-                    e.target.getObjects().forEach(obj => emitObjectModify(obj));
+                    e.target.getObjects().forEach(obj => { obj.setCoords(); emitObjectModify(obj); });
                 } else {
+                    e.target.setCoords();
                     emitObjectModify(e.target);
+                    // 枠と文字がペアの時は、相方も一緒に共有する
+                    if (e.target.linkedId) {
+                        const pair = canvas.getObjects().find(o => o.linkedId === e.target.linkedId && o.objectId !== e.target.objectId);
+                        if (pair) emitObjectModify(pair);
+                    }
                 }
             });
 
-            // 🌟 誰が触っているか見せるロック機能の送信
+            // なまえタグ（ロック機能）の通信
             canvas.on('selection:created', (e) => broadcastLock(e.selected, true));
             canvas.on('selection:updated', (e) => { broadcastLock(e.deselected, false); broadcastLock(e.selected, true); });
             canvas.on('selection:cleared', (e) => broadcastLock(e.deselected, false));
 
-            // 🌟 編集中なまえタグの描画
+            // なまえタグの表示
             canvas.on('after:render', function() {
                 const ctx = canvas.contextContainer;
                 canvas.getObjects().forEach(obj => {
                     if (obj.editorName && obj.editorName !== myName) {
-                        const text = obj.editorName + "編集中";
+                        const text = obj.editorName + " 編集中";
                         ctx.font = '14px sans-serif';
                         const textWidth = ctx.measureText(text).width;
                         const x = obj.left || 0;
@@ -931,10 +943,14 @@
             renderNextThumb();
         });
 
+        // 🌟 発表モードのバグ完全修正
         socket.on('force-presentation', (page) => {
             if (!isTeacher) {
-                isPresentationMode = true;
-                switchPage(page);
+                if (currentPage !== page) {
+                    isPresentationMode = false; // 一時的に解除して移動を許可
+                    switchPage(page);
+                }
+                isPresentationMode = true; // 強制ロック
                 document.getElementById('presentation-toast').style.display = 'block';
                 if(canvas) {
                     canvas.discardActiveObject(); canvas.isDrawingMode = false;
@@ -955,7 +971,7 @@
             }
         });
 
-        // 🌟 バグ完全解決の要：部分同期システム受信処理
+        // 🌟 データの消失を防ぐ【部分同期の受け取り】
         socket.on('canvas-data', (data) => {
             const targetPage = data.page || 1;
             if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
@@ -963,12 +979,32 @@
 
             isReceiving = true;
 
-            // 部分的な変更（移動・文字入力など）だけを受信した場合
+            // 他の人が図形を動かした時など、一部だけが変わった場合（これが文字消失を防ぎます！）
             if (data.partialUpdate) {
                 const p = data.partialUpdate;
                 if (p.action === 'modify') {
                     const obj = canvas.getObjects().find(o => o.objectId === p.objectId);
-                    if (obj) { obj.set(p.objData); if (obj.isVerticalText) fixVerticalText(obj); canvas.renderAll(); }
+                    if (obj) { 
+                        obj.set(p.objData); 
+                        obj.setCoords(); // 🌟これで図形が端に飛んでいかなくなります！
+                        if (obj.isVerticalText) fixVerticalText(obj); 
+                        
+                        // 枠と文字の自動リサイズ対応
+                        if (obj.linkedId && obj.linkRole === 'text') {
+                            const frame = canvas.getObjects().find(o => o.linkedId === obj.linkedId && o.linkRole === 'frame');
+                            if (frame) {
+                                const rect = frame.getObjects()[0]; 
+                                const minW = frame.minW || 0; const minH = frame.minH || 0;
+                                const newW = Math.max(minW, obj.width + 60); const newH = Math.max(minH, obj.height + 60);
+                                if (rect.width !== newW || rect.height !== newH) {
+                                    rect.set({ width: newW, height: newH });
+                                    const oldLeft = frame.left; const oldTop = frame.top;
+                                    frame.addWithUpdate(); frame.set({ left: oldLeft, top: oldTop }); frame.setCoords();
+                                }
+                            }
+                        }
+                        canvas.renderAll(); 
+                    }
                 } else if (p.action === 'add') {
                     fabric.util.enlivenObjects([p.objData], (enlivened) => {
                         const newObj = enlivened[0];
@@ -979,9 +1015,6 @@
                         }
                         canvas.renderAll();
                     });
-                } else if (p.action === 'remove') {
-                    const obj = canvas.getObjects().find(o => o.objectId === p.objectId);
-                    if (obj) { canvas.remove(obj); canvas.renderAll(); }
                 } else if (p.action === 'removeMultiple') {
                     p.objectIds.forEach(id => {
                         const obj = canvas.getObjects().find(o => o.objectId === id);
@@ -994,12 +1027,21 @@
                 } else if (p.action === 'unlock') {
                     const obj = canvas.getObjects().find(o => o.objectId === p.objectId);
                     if (obj) { obj.set('editorName', null); setPermissions(obj); canvas.renderAll(); }
+                } else if (p.action === 'background') {
+                    getEl('bgSelect').value = p.bg;
+                    if (p.bg === 'grid') canvas.setBackgroundColor({ source: bgGrid, repeat: 'repeat' }, () => canvas.renderAll());
+                    else if (p.bg === 'ruled') canvas.setBackgroundColor({ source: bgRuled, repeat: 'repeat' }, () => canvas.renderAll());
+                    else canvas.setBackgroundColor('#ffffff', () => canvas.renderAll());
+                } else if (p.action === 'clear') {
+                    canvas.clear();
+                    getEl('bgSelect').value = 'white';
+                    changeBackground(true);
                 }
                 isReceiving = false;
                 return;
             }
 
-            // 完全なページ移動の時だけ、全体を再読み込みする
+            // 新しいページを開いた時だけ、全体を読み込む
             const canvasRaw = data.canvas || data;
             if (!canvasRaw || !canvasRaw.objects || canvasRaw.objects.length === 0) {
                  if(canvas) { canvas.clear(); getEl('bgSelect').value = 'white'; changeBackground(true); }
