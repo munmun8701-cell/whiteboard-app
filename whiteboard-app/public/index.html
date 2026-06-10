@@ -31,6 +31,7 @@
         .btn-green { background-color: #28a745; }
         .btn-orange { background-color: #fd7e14; }
         .btn-pink { background-color: #e83e8c; }
+        .btn-dark { background-color: #343a40; } /* 🌟操作履歴ボタンの色 */
 
         .teacher-only { display: none; }
         .student-only { display: none; }
@@ -50,6 +51,13 @@
         .gallery-item h3 { margin: 0 0 10px 0; font-size: 18px; color: #333; text-align: center; }
         .gallery-item img { width: 100%; border: 1px solid #ccc; border-radius: 4px; background-color: white; }
         
+        /* 🌟 先生用の操作履歴パネル */
+        #history-panel { display: none; position: fixed; right: 0; top: 0; width: 350px; height: 100vh; background: white; box-shadow: -4px 0 10px rgba(0,0,0,0.2); z-index: 2000; overflow-y: auto; padding: 15px; text-align: left; transition: transform 0.3s ease; }
+        #history-panel h3 { margin-top: 0; color: #333; border-bottom: 2px solid #ccc; padding-bottom: 10px; }
+        #history-list { list-style: none; padding: 0; margin: 0; }
+        #history-list li { border-bottom: 1px dashed #eee; padding: 10px 0; font-size: 14px; line-height: 1.4; animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; background: #fff9c4; } to { opacity: 1; background: transparent; } }
+
         @keyframes flashRed { 0% { box-shadow: 0 0 10px red; } 50% { box-shadow: 0 0 30px red; } 100% { box-shadow: 0 0 10px red; } }
         .status-sos { animation: flashRed 1s infinite; border-color: red !important; }
         .status-done { border-color: #28a745 !important; }
@@ -142,6 +150,8 @@
             
             <button class="teacher-only btn-base btn-orange" onclick="forcePresentation()">📢 発表</button>
             <button class="teacher-only btn-base btn-gray" onclick="cancelPresentation()">発表解除</button>
+            
+            <button class="teacher-only btn-base btn-dark" onclick="toggleHistory()">📜 操作履歴</button>
 
             <button id="viewGalleryBtn" class="btn-base btn-blue">👀 みんなのボード</button>
             <button id="exportPdfBtn" class="teacher-only btn-base btn-purple">PDF保存</button>
@@ -152,6 +162,15 @@
             <div id="presentation-toast">📢 友達の発表を聞きましょう！</div>
             <canvas id="canvas" width="2000" height="1500"></canvas>
         </div>
+    </div>
+
+    <div id="history-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin:0; border:none;">📜 クラスの操作履歴</h3>
+            <button class="btn-base btn-gray" style="font-size:16px; padding:4px 8px;" onclick="toggleHistory()">✖</button>
+        </div>
+        <p style="font-size:12px; color:#666;">※誰が勝手に動かしたか、ここで確認できます。</p>
+        <ul id="history-list"></ul>
     </div>
 
     <div id="gallery-modal">
@@ -181,7 +200,6 @@
 
         function getEl(id) { return document.getElementById(id); }
 
-        // 通信項目にobjectIdとeditorName（編集者）を追加
         const customProps = ['author', 'timestamp', 'linkedId', 'linkRole', 'relX', 'relY', 'isVerticalText', 'minW', 'minH', 'objectId', 'editorName'];
 
         function generateId() {
@@ -190,6 +208,32 @@
 
         const bgGrid = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 40 0 L 0 0 0 40" fill="none" stroke="%23e0e0e0" stroke-width="1"/></svg>';
         const bgRuled = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ffffff"/><path d="M 39 0 L 39 40" fill="none" stroke="%23cccccc" stroke-width="1"/></svg>';
+
+        // 🌟 操作履歴を記録・表示する関数
+        function toggleHistory() {
+            const panel = getEl('history-panel');
+            panel.style.display = panel.style.display === 'none' || panel.style.display === '' ? 'block' : 'none';
+        }
+
+        function translateType(type, role) {
+            if (role === 'frame') return '「枠」';
+            if (type === 'i-text' || type === 'textbox') return '「文字・ふせん」';
+            if (type === 'image') return '「写真・画像」';
+            if (['rect', 'circle', 'line', 'path'].includes(type)) return '「図形・ペン」';
+            return '「アイテム」';
+        }
+
+        function addHistoryLog(msg) {
+            if (!isTeacher) return;
+            const list = getEl('history-list');
+            if (!list) return;
+            const li = document.createElement('li');
+            li.innerHTML = `<span style="color:#888; font-size:11px;">[${new Date().toLocaleTimeString()}]</span><br><b>${msg}</b>`;
+            list.prepend(li);
+            if (list.children.length > 100) {
+                list.removeChild(list.lastChild);
+            }
+        }
 
         function changeFontSize() {
             if(!canvas) return;
@@ -291,12 +335,12 @@
             return { bg: getEl('bgSelect').value, objects: canvas.getObjects().filter(o => o.author).map(o => o.toObject(customProps)) };
         }
 
-        // 🌟 バグを消し去る【部分同期システム】
+        // 🌟 通信時に履歴用データ（actor: myName など）を確実に送る
         function emitObjectModify(obj) {
             if (isReceiving || !obj.objectId) return;
             socket.emit('canvas-data', {
                 page: currentPage, canvas: getFullJson(),
-                partialUpdate: { action: 'modify', objectId: obj.objectId, objData: obj.toObject(customProps) }
+                partialUpdate: { action: 'modify', objectId: obj.objectId, objType: obj.type, linkRole: obj.linkRole, objData: obj.toObject(customProps), actor: myName }
             });
         }
 
@@ -305,7 +349,7 @@
             if (!obj.objectId) obj.objectId = generateId();
             socket.emit('canvas-data', {
                 page: currentPage, canvas: getFullJson(),
-                partialUpdate: { action: 'add', objectId: obj.objectId, objData: obj.toObject(customProps) }
+                partialUpdate: { action: 'add', objectId: obj.objectId, objType: obj.type, linkRole: obj.linkRole, objData: obj.toObject(customProps), actor: myName }
             });
         }
 
@@ -314,11 +358,10 @@
             const ids = objects.map(o => o.objectId).filter(id => id);
             socket.emit('canvas-data', {
                 page: currentPage, canvas: getFullJson(),
-                partialUpdate: { action: 'removeMultiple', objectIds: ids }
+                partialUpdate: { action: 'removeMultiple', objectIds: ids, actor: myName }
             });
         }
 
-        // 🌟 誰が触っているか表示・ロックする
         function broadcastLock(objects, isLocked) {
             if (!objects || isReceiving) return;
             objects.forEach(obj => {
@@ -456,7 +499,7 @@
                 if (!skipEmit && !isReceiving) {
                     socket.emit('canvas-data', {
                         page: currentPage, canvas: getFullJson(),
-                        partialUpdate: { action: 'background', bg: bgType }
+                        partialUpdate: { action: 'background', bg: bgType, actor: myName }
                     });
                 }
             };
@@ -641,7 +684,7 @@
                 socket.emit('clear-canvas'); 
                 socket.emit('canvas-data', {
                     page: currentPage, canvas: getFullJson(),
-                    partialUpdate: { action: 'clear' }
+                    partialUpdate: { action: 'clear', actor: myName }
                 });
             }
         }
@@ -817,7 +860,6 @@
                 setPermissions(options.path); emitObjectAdd(options.path);
             });
 
-            // 🌟 図形を動かした時に「確実に」位置を確定して同期する
             canvas.on('object:modified', (e) => {
                 if (e.target.type === 'activeSelection') {
                     e.target.getObjects().forEach(obj => { 
@@ -837,30 +879,29 @@
                 }
             });
 
-            // 🌟 なまえタグ（ロック機能）の通信
             canvas.on('selection:created', (e) => broadcastLock(e.selected, true));
             canvas.on('selection:updated', (e) => { broadcastLock(e.deselected, false); broadcastLock(e.selected, true); });
             canvas.on('selection:cleared', (e) => broadcastLock(e.deselected, false));
 
-            // 🌟 なまえタグの表示（崩れないように調整）
+            // 🌟 さらに見やすくした「なまえタグ」
             canvas.on('after:render', function() {
                 const ctx = canvas.contextContainer;
                 canvas.getObjects().forEach(obj => {
                     if (obj.editorName && obj.editorName !== myName) {
                         const text = obj.editorName + " 編集中";
-                        ctx.font = 'bold 14px sans-serif';
+                        ctx.font = 'bold 20px sans-serif'; // 🌟 さらに大きく！
                         const textWidth = ctx.measureText(text).width;
                         const br = obj.getBoundingRect();
                         const x = br.left;
-                        const y = br.top - 25;
+                        const y = br.top - 35; // 🌟 位置を上に調整
                         
                         ctx.fillStyle = '#ff9800'; 
                         ctx.beginPath();
-                        ctx.roundRect ? ctx.roundRect(x, y, textWidth + 16, 22, 6) : ctx.rect(x, y, textWidth + 16, 22);
+                        ctx.roundRect ? ctx.roundRect(x, y, textWidth + 20, 32, 8) : ctx.rect(x, y, textWidth + 20, 32);
                         ctx.fill();
                         
                         ctx.fillStyle = 'white';
-                        ctx.fillText(text, x + 8, y + 16);
+                        ctx.fillText(text, x + 10, y + 23); // 🌟 文字位置調整
                     }
                 });
             });
@@ -949,14 +990,12 @@
             renderNextThumb();
         });
 
-        // 🌟 発表モードで固まるバグを完全に修正！
         socket.on('force-presentation', (page) => {
             if (!isTeacher) {
                 isPresentationMode = true; 
                 document.getElementById('presentation-toast').style.display = 'block';
                 
                 if (currentPage !== page) {
-                    // 現在の作業をこっそり保存して、先生のページへ強制移動
                     if (!isReceiving && canvas) {
                         socket.emit('canvas-data', { page: currentPage, canvas: getFullJson() });
                     }
@@ -971,7 +1010,6 @@
                     }
                     socket.emit('switch-page', page);
                 } else {
-                    // すでに同じページにいる場合はロックだけする
                     if(canvas) {
                         canvas.discardActiveObject(); canvas.isDrawingMode = false;
                         canvas.getObjects().forEach(obj => setPermissions(obj)); 
@@ -993,7 +1031,6 @@
             }
         });
 
-        // 🌟 バグ完全解決の要：部分同期の受信処理
         socket.on('canvas-data', (data) => {
             const targetPage = data.page || 1;
             if (targetPage > maxPage) { maxPage = targetPage; renderPageButtons(); }
@@ -1001,18 +1038,29 @@
 
             isReceiving = true;
 
-            // 他の人が図形を動かした時など、一部だけが変わった場合（これが文字消失・図形崩壊を防ぎます！）
             if (data.partialUpdate) {
                 const p = data.partialUpdate;
+                
+                // 🌟 操作履歴を先生のパネルに記録！
+                if (isTeacher && p.actor && p.action !== 'lock' && p.action !== 'unlock') {
+                    let objName = p.objType ? translateType(p.objType, p.linkRole) : 'アイテム';
+                    let actName = '';
+                    if(p.action === 'add') actName = 'を追加しました✨';
+                    if(p.action === 'modify') actName = 'を動かしました/変更しました✏️';
+                    if(p.action === 'removeMultiple') actName = 'を消しました🗑️';
+                    if(p.action === 'background') actName = '背景を変更しました🖼️';
+                    if(p.action === 'clear') actName = 'ページを全消去しました💣';
+                    
+                    if(actName) addHistoryLog(`【P.${data.page}】<b>${p.actor}</b> が ${objName} ${actName}`);
+                }
+
                 if (p.action === 'modify') {
                     const oldObj = canvas.getObjects().find(o => o.objectId === p.objectId);
                     if (oldObj) { 
-                        // もし自分が今まさに文字を入力中なら、置き換えずに守る！
                         if (canvas.getActiveObject() === oldObj && oldObj.isEditing) {
                             isReceiving = false; return; 
                         }
                         
-                        // 🌟 図形が端っこに飛ぶバグを防ぐ「Enliven（再生）」処理
                         fabric.util.enlivenObjects([p.objData], (enlivened) => {
                             const newObj = enlivened[0];
                             if (!newObj) return;
@@ -1039,8 +1087,6 @@
                             }
 
                             if (oldObj.editorName) newObj.set('editorName', oldObj.editorName);
-
-                            // 🌟 文字入力のリセットを防ぐため、やさしく再描画
                             canvas.requestRenderAll();
                         });
                     }
@@ -1080,7 +1126,6 @@
                 return;
             }
 
-            // 新しいページを開いた時だけ、全体を読み込む
             const canvasRaw = data.canvas || data;
             if (!canvasRaw || !canvasRaw.objects || canvasRaw.objects.length === 0) {
                  if(canvas) { canvas.clear(); getEl('bgSelect').value = 'white'; changeBackground(true); }
